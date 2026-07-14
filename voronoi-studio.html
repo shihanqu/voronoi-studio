@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voronoi Studio — voxel organoid generator</title>
+<style>
+  :root{
+    --bg:#14161a; --panel:#1b1e24; --panel2:#22262e; --line:#2e333d;
+    --text:#dfe3ea; --dim:#8a93a3; --accent:#7fd4a8; --accent2:#5db4e8;
+    --warn:#e8b45d;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--text);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; overflow:hidden;
+  }
+  #sidebar{
+    width:312px; min-width:312px; height:100%; overflow-y:auto;
+    background:var(--panel); border-right:1px solid var(--line);
+    padding:14px 16px 40px;
+  }
+  #sidebar h1{font-size:16px; letter-spacing:.3px; margin-bottom:2px;}
+  #sidebar .sub{color:var(--dim); font-size:11.5px; margin-bottom:14px;}
+  fieldset{border:1px solid var(--line); border-radius:8px; padding:10px 12px 12px; margin-bottom:12px; background:var(--panel2);}
+  legend{padding:0 6px; color:var(--accent); font-size:11px; text-transform:uppercase; letter-spacing:1px;}
+  label.row{display:block; margin:8px 0 2px; color:var(--dim); font-size:12px;}
+  label.row b{color:var(--text); font-weight:500;}
+  .val{float:right; color:var(--accent2); font-variant-numeric:tabular-nums;}
+  input[type=range]{width:100%; accent-color:var(--accent); height:20px;}
+  select,input[type=number],button{
+    background:#14161a; color:var(--text);
+    border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:13px;
+  }
+  select{width:100%;}
+  .btnrow{display:flex; gap:8px; margin-top:10px;}
+  button{cursor:pointer; flex:1; transition:background .15s;}
+  button:hover{background:#2a2f38;}
+  button.primary{background:var(--accent); color:#10241a; border-color:var(--accent); font-weight:600;}
+  button.primary:hover{background:#93e2ba;}
+  button:disabled{opacity:.45; cursor:default;}
+  .seedrow{display:flex; gap:8px; align-items:center; margin-top:6px;}
+  .seedrow input{width:90px;}
+  .seedrow button{flex:0 0 auto; padding:6px 10px;}
+  #progressWrap{height:6px; background:#0e1013; border-radius:3px; overflow:hidden; margin-top:10px;}
+  #progressBar{height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .12s;}
+  #status{color:var(--dim); font-size:11.5px; margin-top:5px; min-height:15px;}
+  #errbox{display:none; margin-top:10px; border:1px solid #c0564f; background:#2a1b1a;
+    border-radius:8px; padding:8px 10px; font-size:11px; color:#f0b8b2; max-height:200px;
+    overflow:auto; white-space:pre-wrap; word-break:break-word;
+    font-family:ui-monospace,Menlo,monospace;}
+  #errbox .errclear{float:right; cursor:pointer; color:#f0b8b2; text-decoration:underline;}
+  #stats{font-size:11.5px; color:var(--dim); line-height:1.7;}
+  #stats b{color:var(--text); font-weight:500;}
+  #stats .ok{color:var(--accent);}
+  #stats .bad{color:var(--warn);}
+  .hint{color:var(--dim); font-size:11px; margin-top:8px;}
+  #viewport{flex:1; position:relative; height:100%;}
+  #viewport canvas{display:block;}
+  #dropHint{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(20,22,26,.75); border:2px dashed var(--accent); border-radius:12px;
+    font-size:18px; color:var(--accent); pointer-events:none; z-index:5;
+  }
+  input[type=file]{display:none;}
+  .filebtn{margin-top:8px; width:100%;}
+  a{color:var(--accent2);}
+  ::-webkit-scrollbar{width:9px;} ::-webkit-scrollbar-thumb{background:#333a45; border-radius:5px;}
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h1>Voronoi Studio <span style="opacity:.45;font-size:.55em;font-weight:normal">build r1</span></h1>
+  <div class="sub">Voronoi organoids from any solid — voxel engine (units: mm)</div>
+
+  <fieldset>
+    <legend>Input shape</legend>
+    <select id="shape">
+      <option value="sphere">Sphere</option>
+      <option value="cube">Cube</option>
+      <option value="can">Soda can (to scale, 66 × 122 mm)</option>
+      <option value="benchy">3DBenchy (to scale, 60 × 31 × 48 mm)</option>
+      <option value="mesh" disabled id="meshOpt">Imported STL…</option>
+    </select>
+    <div id="sizeRows">
+      <label class="row" data-for="sphere cube">Size <span class="val" id="v_size"></span>
+        <input type="range" id="size" min="30" max="140" step="1" value="60"></label>
+      <label class="row" data-for="can benchy mesh">Scale % <span class="val" id="v_scalePct"></span>
+        <input type="range" id="scalePct" min="40" max="250" step="5" value="100"></label>
+    </div>
+    <button class="filebtn" id="importBtn">Import STL as input shape…</button>
+    <input type="file" id="fileInput" accept=".stl">
+    <div class="hint">Imported meshes should be closed (watertight) solids. You can also drag &amp; drop an STL onto the viewport.</div>
+    <label class="row" style="margin-top:10px">Solid-surface tool
+      <select id="selTool">
+        <option value="surface">Smart select (whole surface)</option>
+        <option value="brush">Sphere brush (paint patches)</option>
+      </select>
+    </label>
+    <div id="brushRow" style="display:none">
+      <label class="row">Brush Ø <span class="val" id="v_brushR"></span>
+        <input type="range" id="brushR" min="4" max="50" step="1" value="14"></label>
+    </div>
+    <div class="btnrow" style="margin-top:10px"><button id="clearPaint">Clear solid surfaces</button></div>
+    <label class="row" style="margin-top:10px">
+      <input type="checkbox" id="showInput"> Show input shape
+    </label>
+    <div class="hint">Hold <b>⌥ Option</b> (or tick the box) to see the input shape, then mark regions
+    that stay a solid thin shell (no organoid holes), highlighted red. <b>Smart select:</b> click a surface
+    (flat or spherical — e.g. the dish or the top ring); the whole surface is detected; click again to
+    deselect. <b>Sphere brush:</b> drag to paint free-form patches with a size-controlled ball, like a brush.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Organic pattern</legend>
+    <label class="row">Cell size (hole pitch) <span class="val" id="v_cell"></span>
+      <input type="range" id="cell" min="5" max="30" step="0.5" value="12"></label>
+    <label class="row">Strut thickness <span class="val" id="v_strut"></span>
+      <input type="range" id="strut" min="1" max="6" step="0.1" value="2.4"></label>
+    <label class="row">Shell thickness <span class="val" id="v_shell"></span>
+      <input type="range" id="shell" min="0.8" max="6" step="0.1" value="2"></label>
+    <label class="row">Bulge (organic swell) <span class="val" id="v_bulge"></span>
+      <input type="range" id="bulge" min="0" max="3" step="0.1" value="1.2"></label>
+    <label class="row">Hole rounding <span class="val" id="v_blend"></span>
+      <input type="range" id="blend" min="0" max="3" step="0.1" value="1.1"></label>
+    <label class="row">Cell size variance <span class="val" id="v_variance"></span>
+      <input type="range" id="variance" min="0" max="0.8" step="0.05" value="0.35"></label>
+    <label class="row" style="margin-top:10px">
+      <input type="checkbox" id="inset" checked> Contain within input surface
+    </label>
+    <div class="hint">On: the shell is inset so no strut pokes outside the original shape's bounds. Off: the shell straddles the surface (grows outward by shell/2 + bulge).</div>
+    <label class="row">Random seed</label>
+    <div class="seedrow">
+      <input type="number" id="seed" value="42" step="1">
+      <button id="dice" title="Randomize">🎲</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Quality</legend>
+    <select id="quality">
+      <option value="1.2">Draft (1.2 mm voxel)</option>
+      <option value="0.8" selected>Standard (0.8 mm voxel)</option>
+      <option value="0.55">High (0.55 mm voxel)</option>
+      <option value="0.4">Ultra (0.4 mm voxel)</option>
+      <option value="0.25">Super Ultra (0.25 mm voxel — very slow)</option>
+    </select>
+    <label class="row" style="margin-top:8px">Smoothing <span class="val" id="v_smooth"></span>
+      <input type="range" id="smooth" min="0" max="30" step="1" value="12"></label>
+    <label class="row" style="margin-top:10px">
+      <input type="checkbox" id="auto" checked> Auto-regenerate on change
+    </label>
+    <label class="row">
+      <input type="checkbox" id="ghost"> Show input shape (ghost)
+    </label>
+    <label class="row">
+      <input type="checkbox" id="clean" checked> Auto-remove floating debris
+    </label>
+    <div class="hint">Hold <b>⌥ Option</b> to preview the plain input shape without the shell.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Print &amp; post-process</legend>
+    <label class="row">Build plate
+      <select id="plate">
+        <option value="none">None (no overhang bias)</option>
+        <option value="below">Below object (print upright)</option>
+        <option value="above">Above object (print inverted)</option>
+      </select>
+    </label>
+    <div id="overhangRow">
+      <label class="row">Overhang bias angle <span class="val" id="v_overhang"></span>
+        <input type="range" id="overhang" min="15" max="60" step="5" value="30"></label>
+      <div class="hint">Stretches cells vertically so struts run steeper — fewer arms near-parallel
+      to the plate. It reduces shallow angles rather than eliminating them, keeping the organic look.
+      The bias is symmetric, so plate above or below yields the same strut angles.</div>
+    </div>
+  </fieldset>
+
+  <div class="btnrow">
+    <button class="primary" id="generate">Generate</button>
+    <button id="export" disabled>Export STL</button>
+  </div>
+  <div class="btnrow">
+    <button id="saveSettings">Save settings (JSON)</button>
+    <button id="loadSettings">Load settings…</button>
+  </div>
+  <input type="file" id="settingsInput" accept=".json,application/json">
+  <div id="progressWrap"><div id="progressBar"></div></div>
+  <div id="status">Ready.</div>
+  <div id="errbox"></div>
+
+  <fieldset style="margin-top:12px">
+    <legend>Result</legend>
+    <div id="stats">No mesh yet.</div>
+  </fieldset>
+
+</div>
+
+<div id="viewport"><div id="dropHint">Drop STL to use as input shape</div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ============================== small utils ============================== */
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp = (x,a,b)=> x<a?a : x>b?b : x;
+// yield to the event loop — but NOT in a hidden tab, where setTimeout is
+// throttled to 1s and cooperative yielding would slow generation ~30x
+const tick = () => document.hidden ? Promise.resolve() : new Promise(r => setTimeout(r, 0));
+
+/* ============================== SDF primitives (projection targets) ============================== */
+
+function sdSphere(x,y,z,r){ return Math.sqrt(x*x+y*y+z*z) - r; }
+
+function sdRoundBox(x,y,z,hx,hy,hz,r){
+  const qx = Math.abs(x)-hx+r, qy = Math.abs(y)-hy+r, qz = Math.abs(z)-hz+r;
+  const ax = Math.max(qx,0), ay = Math.max(qy,0), az = Math.max(qz,0);
+  return Math.sqrt(ax*ax+ay*ay+az*az) + Math.min(Math.max(qx,Math.max(qy,qz)),0) - r;
+}
+
+// signed distance to a closed 2D polygon (iq), negative inside.
+// skipAxisEdges: edges on the revolution axis are not real surfaces.
+function polySDF(px,py,v,skipAxisEdges){
+  let d = Infinity, s = 1;
+  for(let i=0, j=v.length-1; i<v.length; j=i++){
+    const ex = v[j][0]-v[i][0], ey = v[j][1]-v[i][1];
+    const wx = px - v[i][0],   wy = py - v[i][1];
+    if(!(skipAxisEdges && v[i][0] < 1e-9 && v[j][0] < 1e-9)){
+      const t = clamp((wx*ex+wy*ey)/(ex*ex+ey*ey), 0, 1);
+      const bx = wx - ex*t, by = wy - ey*t;
+      const dd = bx*bx + by*by;
+      if(dd < d) d = dd;
+    }
+    const c1 = py >= v[i][1], c2 = py < v[j][1], c3 = ex*wy > ey*wx;
+    if((c1&&c2&&c3) || (!c1&&!c2&&!c3)) s = -s;
+  }
+  return s*Math.sqrt(d);
+}
+
+// Resolve a control polyline with per-corner fillet radii into a smooth
+// profile: [r, z, filletRadius?] — corners with a radius become sampled arcs.
+function buildProfile(pts){
+  const out = [];
+  for(let i=0;i<pts.length;i++){
+    const [x,y,f] = pts[i];
+    if(!f || i===0 || i===pts.length-1){ out.push([x,y]); continue; }
+    const [x0,y0] = pts[i-1], [x1,y1] = pts[i+1];
+    let ax=x0-x, ay=y0-y, bx=x1-x, by=y1-y;
+    const la=Math.hypot(ax,ay)||1, lb=Math.hypot(bx,by)||1;
+    ax/=la; ay/=la; bx/=lb; by/=lb;
+    const dot = clamp(ax*bx+ay*by, -1, 1);
+    const ang = Math.acos(dot);
+    if(ang > Math.PI - 1e-3){ out.push([x,y]); continue; }
+    const t = Math.min(f/Math.tan(ang/2), la*0.48, lb*0.48);
+    const rad = t*Math.tan(ang/2);
+    const p0 = [x+ax*t, y+ay*t], p1 = [x+bx*t, y+by*t];
+    let mx=ax+bx, my=ay+by; const lm=Math.hypot(mx,my)||1; mx/=lm; my/=lm;
+    const c = [x + mx*rad/Math.sin(ang/2), y + my*rad/Math.sin(ang/2)];
+    const a0 = Math.atan2(p0[1]-c[1], p0[0]-c[0]);
+    let d = Math.atan2(p1[1]-c[1], p1[0]-c[0]) - a0;
+    while(d >  Math.PI) d -= 2*Math.PI;
+    while(d < -Math.PI) d += 2*Math.PI;
+    const steps = Math.max(2, Math.ceil(Math.abs(d)/(Math.PI/8)));
+    for(let s=0;s<=steps;s++){
+      const a = a0 + d*s/steps;
+      out.push([c[0]+rad*Math.cos(a), c[1]+rad*Math.sin(a)]);
+    }
+  }
+  return out;
+}
+
+// US 12 oz can (211/202): Ø66.3 body, 122.2 mm tall.
+// Concave punt base, standing rim, flared heel, straight wall, conical neck,
+// then a FLAT top (stand base) instead of the seamed bead.
+const CAN_H = 122.2;
+const CAN_PTS = [
+  [0,    4.0],            // punt dome center (base is concave)
+  [17,   3.2,  10],       // dome slope
+  [24.6, 0.5,  1.6],      // approach to standing rim
+  [26.2, 0,    1.8],      // contact ring
+  [29.8, 2.2,  7],        // heel — rounded flare up and out
+  [33.15,10,   14],       // blend into full body radius
+  [33.15,105,  9],        // straight wall, then shoulder
+  [27.5, 118.2,3.5],      // conical neck
+  [27.5, CAN_H,1.5],      // short vertical land under the top
+  [0,    CAN_H],          // flat top (stand base)
+];
+const CAN_PROFILE = buildProfile(CAN_PTS).map(([r,z]) => [r, z - CAN_H/2]);
+
+/* ============================== STL parse / write ============================== */
+
+function parseSTL(buffer){
+  const dv = new DataView(buffer);
+  if(buffer.byteLength >= 84){
+    const n = dv.getUint32(80, true);
+    if(84 + n*50 === buffer.byteLength){
+      const tris = new Float32Array(n*9);
+      let o = 84;
+      for(let i=0;i<n;i++){
+        o += 12;
+        for(let k=0;k<9;k++){ tris[i*9+k] = dv.getFloat32(o, true); o += 4; }
+        o += 2;
+      }
+      return tris;
+    }
+  }
+  const text = new TextDecoder().decode(buffer);
+  if(!/^\s*solid/.test(text)) throw new Error('Not a recognizable STL file');
+  const nums = [];
+  const re = /vertex\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)/g;
+  let m;
+  while((m = re.exec(text))) nums.push(+m[1], +m[2], +m[3]);
+  if(nums.length < 9 || nums.length % 9 !== 0) throw new Error('Malformed ASCII STL');
+  return new Float32Array(nums);
+}
+
+function buildBinarySTL(positions, indices){
+  const triCount = indices.length/3;
+  const buf = new ArrayBuffer(84 + triCount*50);
+  const dv = new DataView(buf);
+  const header = 'Organic Shell Studio v2 — mesh-native organoid';
+  for(let i=0;i<Math.min(80,header.length);i++) dv.setUint8(i, header.charCodeAt(i));
+  dv.setUint32(80, triCount, true);
+  let o = 84;
+  for(let t=0;t<triCount;t++){
+    const a=indices[t*3]*3, b=indices[t*3+1]*3, c=indices[t*3+2]*3;
+    const ax=positions[a],ay=positions[a+1],az=positions[a+2];
+    const bx=positions[b],by=positions[b+1],bz=positions[b+2];
+    const cx=positions[c],cy=positions[c+1],cz=positions[c+2];
+    const ux=bx-ax, uy=by-ay, uz=bz-az, vx=cx-ax, vy=cy-ay, vz=cz-az;
+    let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const l = Math.hypot(nx,ny,nz) || 1; nx/=l; ny/=l; nz/=l;
+    dv.setFloat32(o,nx,true); dv.setFloat32(o+4,ny,true); dv.setFloat32(o+8,nz,true); o+=12;
+    dv.setFloat32(o,ax,true); dv.setFloat32(o+4,ay,true); dv.setFloat32(o+8,az,true); o+=12;
+    dv.setFloat32(o,bx,true); dv.setFloat32(o+4,by,true); dv.setFloat32(o+8,bz,true); o+=12;
+    dv.setFloat32(o,cx,true); dv.setFloat32(o+4,cy,true); dv.setFloat32(o+8,cz,true); o+=12;
+    dv.setUint16(o,0,true); o+=2;
+  }
+  return buf;
+}
+
+/* ============================== shapes ============================== */
+
+let importedMesh = null; // { tris: Float32Array (centered), name, pieces }
+let benchyMesh = null;   // lazy-loaded from ./3DBenchy.stl
+
+function centerTris(tris){
+  let mn=[Infinity,Infinity,Infinity], mx=[-Infinity,-Infinity,-Infinity];
+  for(let i=0;i<tris.length;i+=3)
+    for(let k=0;k<3;k++){
+      if(tris[i+k]<mn[k]) mn[k]=tris[i+k];
+      if(tris[i+k]>mx[k]) mx[k]=tris[i+k];
+    }
+  const c = [(mn[0]+mx[0])/2,(mn[1]+mx[1])/2,(mn[2]+mx[2])/2];
+  for(let i=0;i<tris.length;i+=3)
+    for(let k=0;k<3;k++) tris[i+k] -= c[k];
+  return {mn, mx};
+}
+
+function pickLocalFile(accept){
+  return new Promise((resolve, reject)=>{
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = accept;
+    inp.addEventListener('change', async ()=>{
+      const f = inp.files[0];
+      if(!f) return reject(new Error('no file chosen'));
+      try{ resolve(await f.arrayBuffer()); }catch(e){ reject(e); }
+    });
+    inp.addEventListener('cancel', ()=> reject(new Error('file selection cancelled')));
+    inp.click();
+  });
+}
+
+async function ensureBenchy(){
+  if(benchyMesh) return;
+  statusEl.textContent = 'Loading 3DBenchy…';
+  let buf = null;
+  // relative fetch only works when the page has a real base URL (http/https/file);
+  // embedded viewers load the page as a data: URL where this is impossible
+  try{
+    const base = document.baseURI || location.href;
+    if(/^(https?|file):/.test(base)){
+      const r = await fetch(new URL('3DBenchy.stl', base));
+      if(r.ok) buf = await r.arrayBuffer();
+    }
+  }catch(e){ /* fall through to manual picker */ }
+  if(!buf){
+    statusEl.textContent = 'Auto-load unavailable here — please pick 3DBenchy.stl (it sits next to this HTML file)…';
+    try{
+      buf = await pickLocalFile('.stl');
+    }catch(e){
+      throw new Error('3DBenchy.stl could not be auto-loaded (page has no HTTP base URL) and no file was chosen. ' +
+                      'Serve the folder over HTTP, or pick the file manually when prompted.');
+    }
+  }
+  const tris = parseSTL(buf);
+  centerTris(tris);
+  benchyMesh = { tris };
+}
+
+function scaledMeshShape(baseTris, name, P){
+  const s = P.scalePct/100;
+  let tris = baseTris;
+  if(Math.abs(s-1) > 1e-6){
+    tris = new Float32Array(baseTris.length);
+    for(let i=0;i<baseTris.length;i++) tris[i] = baseTris[i]*s;
+  }
+  let mn=[Infinity,Infinity,Infinity], mx=[-Infinity,-Infinity,-Infinity];
+  for(let i=0;i<tris.length;i+=3)
+    for(let k=0;k<3;k++){
+      if(tris[i+k]<mn[k]) mn[k]=tris[i+k];
+      if(tris[i+k]>mx[k]) mx[k]=tris[i+k];
+    }
+  return { kind:'mesh', name, bbox:{min:mn, max:mx}, tris };
+}
+
+function makeShape(P){ return makeShapeBase(P); }
+
+function makeShapeBase(P){
+  if(P.shape === 'sphere'){
+    const r = P.size/2;
+    return {
+      kind:'analytic', name:'sphere',
+      bbox:{min:[-r,-r,-r], max:[r,r,r]},
+      sdf:(x,y,z)=> sdSphere(x,y,z,r),
+      radius:r,
+    };
+  }
+  if(P.shape === 'cube'){
+    const h = P.size/2, cr = Math.min(3, h*0.15);
+    return {
+      kind:'analytic', name:'cube',
+      bbox:{min:[-h,-h,-h], max:[h,h,h]},
+      sdf:(x,y,z)=> sdRoundBox(x,y,z,h,h,h,cr),
+      half:h, cornerR:cr,
+    };
+  }
+  if(P.shape === 'can'){
+    const s = P.scalePct/100;
+    const raw = CAN_PROFILE;
+    const rMaxRaw = 33.15;
+    const hHalfRaw = CAN_H/2;
+    const prof = raw.map(([r,z]) => [r*s, z*s]);
+    return {
+      kind:'analytic', name: 'soda-can',
+      bbox:{min:[-rMaxRaw*s,-rMaxRaw*s,-hHalfRaw*s], max:[rMaxRaw*s,rMaxRaw*s,hHalfRaw*s]},
+      sdf:(x,y,z)=> polySDF(Math.hypot(x,y), z, prof, true),
+      profile: prof,
+    };
+  }
+  if(P.shape === 'benchy'){
+    if(!benchyMesh) throw new Error('3DBenchy still loading — try again in a moment');
+    return scaledMeshShape(benchyMesh.tris, 'benchy', P);
+  }
+  if(P.shape === 'mesh'){
+    if(!importedMesh) throw new Error('No STL imported yet');
+    return scaledMeshShape(importedMesh.tris, importedMesh.name, P);
+  }
+  throw new Error('Unknown shape ' + P.shape);
+}
+
+/* ============================== surface projector ==============================
+   Uniform interface for "the exact input surface":
+     proj(p:[x,y,z]) -> {p:[x,y,z] on surface, n:[nx,ny,nz] outward unit normal}
+     outside(p) -> signed penetration beyond the surface (>0 means outside)
+*/
+
+function closestPointOnTri(px,py,pz, t, i, out){
+  const ax=t[i],ay=t[i+1],az=t[i+2], bx=t[i+3],by=t[i+4],bz=t[i+5], cx=t[i+6],cy=t[i+7],cz=t[i+8];
+  const abx=bx-ax,aby=by-ay,abz=bz-az, acx=cx-ax,acy=cy-ay,acz=cz-az;
+  const apx=px-ax,apy=py-ay,apz=pz-az;
+  const d1=abx*apx+aby*apy+abz*apz, d2=acx*apx+acy*apy+acz*apz;
+  let qx,qy,qz;
+  do{
+    if(d1<=0&&d2<=0){ qx=ax;qy=ay;qz=az; break; }
+    const bpx=px-bx,bpy=py-by,bpz=pz-bz;
+    const d3=abx*bpx+aby*bpy+abz*bpz, d4=acx*bpx+acy*bpy+acz*bpz;
+    if(d3>=0&&d4<=d3){ qx=bx;qy=by;qz=bz; break; }
+    const vc=d1*d4-d3*d2;
+    if(vc<=0&&d1>=0&&d3<=0){ const v=d1/(d1-d3); qx=ax+v*abx;qy=ay+v*aby;qz=az+v*abz; break; }
+    const cpx=px-cx,cpy=py-cy,cpz=pz-cz;
+    const d5=abx*cpx+aby*cpy+abz*cpz, d6=acx*cpx+acy*cpy+acz*cpz;
+    if(d6>=0&&d5<=d6){ qx=cx;qy=cy;qz=cz; break; }
+    const vb=d5*d2-d1*d6;
+    if(vb<=0&&d2>=0&&d6<=0){ const w=d2/(d2-d6); qx=ax+w*acx;qy=ay+w*acy;qz=az+w*acz; break; }
+    const va=d3*d6-d5*d4;
+    if(va<=0&&(d4-d3)>=0&&(d5-d6)>=0){ const w=(d4-d3)/((d4-d3)+(d5-d6));
+      qx=bx+w*(cx-bx); qy=by+w*(cy-by); qz=bz+w*(cz-bz); break; }
+    const denom=1/(va+vb+vc), v=vb*denom, w=vc*denom;
+    qx=ax+abx*v+acx*w; qy=ay+aby*v+acy*w; qz=az+abz*v+acz*w;
+  }while(false);
+  const dx=px-qx, dy=py-qy, dz=pz-qz;
+  out[0]=qx; out[1]=qy; out[2]=qz;
+  return dx*dx+dy*dy+dz*dz;
+}
+
+/* ============================== V1 voxel engine ==============================
+   Field-based pipeline: weighted-Voronoi implicit field over a voxel grid,
+   Gaussian-filtered, extracted with marching tetrahedra (topological welding).
+   Rougher than the mesh engine but indifferent to surface topology — use for
+   thin-walled / detailed / messy models.
+*/
+
+function smax(a,b,k){
+  if(k <= 1e-9) return Math.max(a,b);
+  const h = clamp(0.5 + 0.5*(a-b)/k, 0, 1);
+  return b*(1-h) + a*h + k*h*(1-h);
+}
+
+const _cpTmp = [0,0,0];
+function closestDistSqPointTri(px,py,pz,t,i){ return closestPointOnTri(px,py,pz,t,i,_cpTmp); }
+
+function projectToSurfaceSDF(sdf, p, iters=8){
+  const e = 0.25;
+  for(let i=0;i<iters;i++){
+    const d = sdf(p[0],p[1],p[2]);
+    if(Math.abs(d) < 0.02) break;
+    let gx = sdf(p[0]+e,p[1],p[2]) - sdf(p[0]-e,p[1],p[2]);
+    let gy = sdf(p[0],p[1]+e,p[2]) - sdf(p[0],p[1]-e,p[2]);
+    let gz = sdf(p[0],p[1],p[2]+e) - sdf(p[0],p[1],p[2]-e);
+    const l = Math.hypot(gx,gy,gz) || 1;
+    p[0] -= d*gx/l; p[1] -= d*gy/l; p[2] -= d*gz/l;
+  }
+  return p;
+}
+
+function buildSeedsV1(shape, P, rng){
+  const candidates = [];
+  const bb = shape.bbox;
+  const ext = [bb.max[0]-bb.min[0], bb.max[1]-bb.min[1], bb.max[2]-bb.min[2]];
+  if(shape.kind === 'analytic'){
+    const ATTEMPTS = 24000;
+    for(let i=0;i<ATTEMPTS;i++){
+      const p = [ bb.min[0]+rng()*ext[0], bb.min[1]+rng()*ext[1], bb.min[2]+rng()*ext[2] ];
+      projectToSurfaceSDF(shape.sdf, p);
+      if(Math.abs(shape.sdf(p[0],p[1],p[2])) < 0.2) candidates.push(p);
+    }
+  } else {
+    const tris = shape.tris, nTri = tris.length/9;
+    const cum = new Float64Array(nTri);
+    let acc = 0;
+    for(let t=0;t<nTri;t++){
+      const i=t*9;
+      const ux=tris[i+3]-tris[i], uy=tris[i+4]-tris[i+1], uz=tris[i+5]-tris[i+2];
+      const vx=tris[i+6]-tris[i], vy=tris[i+7]-tris[i+1], vz=tris[i+8]-tris[i+2];
+      acc += 0.5*Math.hypot(uy*vz-uz*vy, uz*vx-ux*vz, ux*vy-uy*vx);
+      cum[t] = acc;
+    }
+    const ATTEMPTS = 24000;
+    for(let i=0;i<ATTEMPTS;i++){
+      const r = rng()*acc;
+      let lo=0, hi=nTri-1;
+      while(lo<hi){ const mid=(lo+hi)>>1; if(cum[mid]<r) lo=mid+1; else hi=mid; }
+      const t=lo*9;
+      let a=rng(), b=rng();
+      if(a+b>1){ a=1-a; b=1-b; }
+      candidates.push([
+        tris[t]+a*(tris[t+3]-tris[t])+b*(tris[t+6]-tris[t]),
+        tris[t+1]+a*(tris[t+4]-tris[t+1])+b*(tris[t+7]-tris[t+1]),
+        tris[t+2]+a*(tris[t+5]-tris[t+2])+b*(tris[t+8]-tris[t+2]),
+      ]);
+    }
+  }
+  const r = P.cell*0.85, r2 = r*r;
+  const gridMap = new Map();
+  const key = p => Math.floor((p[0]-bb.min[0])/r)+','+Math.floor((p[1]-bb.min[1])/r)+','+Math.floor((p[2]-bb.min[2])/r);
+  for(let i=candidates.length-1;i>0;i--){
+    const j = Math.floor(rng()*(i+1));
+    const tmp = candidates[i]; candidates[i]=candidates[j]; candidates[j]=tmp;
+  }
+  const accept = [];
+  const zr = Math.ceil(1/ANISO); // anisotropic reach extends vertically
+  outer:
+  for(const p of candidates){
+    const cx=Math.floor((p[0]-bb.min[0])/r), cy=Math.floor((p[1]-bb.min[1])/r), cz=Math.floor((p[2]-bb.min[2])/r);
+    for(let dz=-zr;dz<=zr;dz++)for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      const cell = gridMap.get((cx+dx)+','+(cy+dy)+','+(cz+dz));
+      if(!cell) continue;
+      for(const q of cell){
+        const ddx=p[0]-q[0], ddy=p[1]-q[1], ddz=(p[2]-q[2])*ANISO;
+        if(ddx*ddx+ddy*ddy+ddz*ddz < r2) continue outer;
+      }
+    }
+    accept.push(p);
+    const k = key(p);
+    if(!gridMap.has(k)) gridMap.set(k, []);
+    gridMap.get(k).push(p);
+  }
+  const n = accept.length;
+  const sx=new Float32Array(n), sy=new Float32Array(n), sz=new Float32Array(n), sw=new Float32Array(n);
+  for(let i=0;i<n;i++){
+    sx[i]=accept[i][0]; sy[i]=accept[i][1]; sz[i]=accept[i][2];
+    sw[i] = 1 + P.variance*(rng()*2-1);
+  }
+  return {n, sx, sy, sz, sw};
+}
+
+function makeSeedGather(seeds, bb, cell){
+  const minx=bb.min[0]-cell, miny=bb.min[1]-cell, minz=bb.min[2]-cell;
+  const gx = Math.max(1, Math.ceil((bb.max[0]+cell-minx)/cell));
+  const gy = Math.max(1, Math.ceil((bb.max[1]+cell-miny)/cell));
+  const gz = Math.max(1, Math.ceil((bb.max[2]+cell-minz)/cell));
+  const nCells = gx*gy*gz;
+  const counts = new Int32Array(nCells+1);
+  const cellOf = new Int32Array(seeds.n);
+  for(let i=0;i<seeds.n;i++){
+    const cx = clamp(Math.floor((seeds.sx[i]-minx)/cell),0,gx-1);
+    const cy = clamp(Math.floor((seeds.sy[i]-miny)/cell),0,gy-1);
+    const cz = clamp(Math.floor((seeds.sz[i]-minz)/cell),0,gz-1);
+    const c = (cz*gy+cy)*gx+cx;
+    cellOf[i]=c; counts[c+1]++;
+  }
+  for(let i=0;i<nCells;i++) counts[i+1]+=counts[i];
+  const items = new Int32Array(seeds.n);
+  const cursor = counts.slice(0,nCells);
+  for(let i=0;i<seeds.n;i++) items[cursor[cellOf[i]]++] = i;
+  const buf = new Int32Array(seeds.n);
+  function gather(x,y,z,R){
+    const cx0 = clamp(Math.floor((x-R-minx)/cell),0,gx-1), cx1 = clamp(Math.floor((x+R-minx)/cell),0,gx-1);
+    const cy0 = clamp(Math.floor((y-R-miny)/cell),0,gy-1), cy1 = clamp(Math.floor((y+R-miny)/cell),0,gy-1);
+    const cz0 = clamp(Math.floor((z-R-minz)/cell),0,gz-1), cz1 = clamp(Math.floor((z+R-minz)/cell),0,gz-1);
+    const R2 = R*R;
+    let n = 0;
+    for(let iz=cz0;iz<=cz1;iz++)for(let iy=cy0;iy<=cy1;iy++)for(let ix=cx0;ix<=cx1;ix++){
+      const c=(iz*gy+iy)*gx+ix;
+      for(let k=counts[c]; k<counts[c+1]; k++){
+        const s=items[k];
+        const dx=x-seeds.sx[s], dy=y-seeds.sy[s], dz=z-seeds.sz[s];
+        if(dx*dx+dy*dy+dz*dz <= R2) buf[n++] = s;
+      }
+    }
+    return n;
+  }
+  gather.buf = buf;
+  return gather;
+}
+
+async function buildMeshSDFGrid(tris, grid, band, progress){
+  const {minx,miny,minz,nx,ny,nz,vox} = grid;
+  const NX=nx+1, NY=ny+1, NZ=nz+1;
+  const d = new Float32Array(NX*NY*NZ);
+  const nTri = tris.length/9;
+  // sign via ray parity along +x
+  const rows = new Array(NY*NZ);
+  const epsY = vox*3.1e-4, epsZ = vox*4.7e-4;
+  for(let ti=0; ti<nTri; ti++){
+    const i = ti*9;
+    const ay=tris[i+1], az=tris[i+2], by=tris[i+4], bz=tris[i+5], cy=tris[i+7], cz=tris[i+8];
+    const yMin=Math.min(ay,by,cy), yMax=Math.max(ay,by,cy);
+    const zMin=Math.min(az,bz,cz), zMax=Math.max(az,bz,cz);
+    const jy0=Math.max(0, Math.ceil((yMin-miny-epsY)/vox)), jy1=Math.min(ny, Math.floor((yMax-miny-epsY)/vox));
+    const jz0=Math.max(0, Math.ceil((zMin-minz-epsZ)/vox)), jz1=Math.min(nz, Math.floor((zMax-minz-epsZ)/vox));
+    const ax=tris[i], bx=tris[i+3], cx=tris[i+6];
+    const e1y=by-ay, e1z=bz-az, e2y=cy-ay, e2z=cz-az;
+    const e1x=bx-ax, e2x=cx-ax;
+    for(let jz=jz0; jz<=jz1; jz++){
+      const oz = minz + jz*vox + epsZ;
+      for(let jy=jy0; jy<=jy1; jy++){
+        const oy = miny + jy*vox + epsY;
+        const det = e1y*e2z - e1z*e2y;
+        if(Math.abs(det) < 1e-12) continue;
+        const inv = 1/det;
+        const ty = oy-ay, tz = oz-az;
+        const u = (ty*e2z - tz*e2y)*inv;
+        if(u<0 || u>1) continue;
+        const v = (e1y*tz - e1z*ty)*inv;
+        if(v<0 || u+v>1) continue;
+        const hitX = ax + u*e1x + v*e2x;
+        const key = jz*NY + jy;
+        (rows[key] || (rows[key]=[])).push(hitX);
+      }
+    }
+    if((ti & 8191)===0){ progress(0.05 + 0.15*ti/nTri, 'voxelizing mesh (sign)'); await tick(); }
+  }
+  // unsigned distance: splat each triangle onto nodes within band
+  const bandSq = band*band;
+  d.fill(bandSq);
+  let t0 = performance.now();
+  for(let ti=0; ti<nTri; ti++){
+    const i = ti*9;
+    let x0=Infinity,y0=Infinity,z0=Infinity,x1=-Infinity,y1=-Infinity,z1=-Infinity;
+    for(let k=0;k<3;k++){
+      const x=tris[i+k*3], y=tris[i+k*3+1], z=tris[i+k*3+2];
+      if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; if(z<z0)z0=z; if(z>z1)z1=z;
+    }
+    const jx0=Math.max(0,Math.ceil((x0-band-minx)/vox)), jx1=Math.min(nx,Math.floor((x1+band-minx)/vox));
+    const jy0=Math.max(0,Math.ceil((y0-band-miny)/vox)), jy1=Math.min(ny,Math.floor((y1+band-miny)/vox));
+    const jz0=Math.max(0,Math.ceil((z0-band-minz)/vox)), jz1=Math.min(nz,Math.floor((z1+band-minz)/vox));
+    for(let jz=jz0; jz<=jz1; jz++){
+      const pz = minz + jz*vox;
+      for(let jy=jy0; jy<=jy1; jy++){
+        const py = miny + jy*vox;
+        const base = (jz*NY+jy)*NX;
+        for(let jx=jx0; jx<=jx1; jx++){
+          const idx = base+jx;
+          const dd = closestDistSqPointTri(minx + jx*vox, py, pz, tris, i);
+          if(dd < d[idx]) d[idx] = dd;
+        }
+      }
+    }
+    if((ti & 255)===0 && performance.now()-t0 > 30){
+      progress(0.2 + 0.22*ti/nTri, 'voxelizing mesh (distance)');
+      await tick(); t0 = performance.now();
+    }
+  }
+  // combine: sqrt + sign from ray parity
+  for(let jz=0; jz<NZ; jz++){
+    for(let jy=0; jy<NY; jy++){
+      const xs = rows[jz*NY+jy];
+      if(xs) xs.sort((a,b)=>a-b);
+      let xi = 0, insideCount = 0;
+      const rowBase = (jz*NY+jy)*NX;
+      for(let jx=0; jx<NX; jx++){
+        const px = minx + jx*vox;
+        if(xs){ while(xi < xs.length && xs[xi] < px){ xi++; insideCount++; } }
+        const dist = Math.sqrt(d[rowBase+jx]);
+        d[rowBase+jx] = (insideCount & 1) === 1 ? -dist : dist;
+      }
+    }
+    if((jz & 31)===0){ progress(0.42 + 0.03*jz/NZ, 'voxelizing mesh (sign)'); await tick(); }
+  }
+  return d;
+}
+
+async function buildField(shape, meshD, seeds, grid, P, progress){
+  const {minx,miny,minz,nx,ny,nz,vox} = grid;
+  const NX=nx+1, NY=ny+1, NZ=nz+1;
+  const F = new Float32Array(NX*NY*NZ);
+  const tHalf = P.shell/2, w = P.strut/2;
+  const inset = P.inset ? (tHalf + P.bulge) : 0;
+  const far = tHalf + P.bulge + P.blend + 3*vox;
+  const gather = seeds.n >= 2 ? makeSeedGather(seeds, shape.bbox, P.cell) : null;
+  const bulgeRange = w*2.2;
+  const {sx,sy,sz,sw} = seeds;
+  const wInv2 = new Float32Array(seeds.n);
+  for(let i=0;i<seeds.n;i++) wInv2[i] = 1/(sw[i]*sw[i]);
+  const BS = 8;
+  const blockHalfDiag = BS*vox*Math.sqrt(3)/2;
+  const gatherR = (blockHalfDiag + 4*P.cell)/ANISO; // metric-near seeds can be Euclid-far in z
+  let t0 = performance.now();
+  for(let bz=0; bz<NZ; bz+=BS){
+    for(let by=0; by<NY; by+=BS){
+      for(let bx=0; bx<NX; bx+=BS){
+        const z1=Math.min(NZ,bz+BS), y1=Math.min(NY,by+BS), x1=Math.min(NX,bx+BS);
+        let candN = -1;
+        const bcx = minx + (bx + (x1-bx)/2 - 0.5)*vox;
+        const bcy = miny + (by + (y1-by)/2 - 0.5)*vox;
+        const bcz = minz + (bz + (z1-bz)/2 - 0.5)*vox;
+        for(let jz=bz; jz<z1; jz++){
+          const pz = minz + jz*vox;
+          for(let jy=by; jy<y1; jy++){
+            const py = miny + jy*vox;
+            const base = (jz*NY+jy)*NX;
+            for(let jx=bx; jx<x1; jx++){
+              const px = minx + jx*vox;
+              const d0 = meshD ? meshD[base+jx] : shape.sdf(px,py,pz);
+              const dd = d0 + inset;
+              const ad = Math.abs(dd);
+              let val;
+              // painted solid surfaces: a shell hugging the input surface exactly
+              // (outer face AT the surface, inner face at -shell), blended smoothly
+              const mB = solidSels.length && ad <= far ? maskBlend(px,py,pz) : 0;
+              if(mB >= 1){
+                val = Math.max(d0, -d0 - P.shell);
+              } else if(ad > far || !gather){
+                val = ad - tHalf; // far from the pattern band
+              } else {
+                if(candN < 0){
+                  candN = gather(bcx,bcy,bcz,gatherR);
+                  if(candN < 2) candN = gather(bcx,bcy,bcz,gatherR*2.5);
+                }
+                if(candN < 2){
+                  val = ad - tHalf;
+                } else {
+                  let b1=Infinity, b2=Infinity;
+                  for(let c=0;c<candN;c++){
+                    const s = gather.buf[c];
+                    const dx=px-sx[s], dy=py-sy[s], dz=(pz-sz[s])*ANISO;
+                    const ds = (dx*dx+dy*dy+dz*dz)*wInv2[s];
+                    if(ds<b1){ b2=b1; b1=ds; } else if(ds<b2){ b2=ds; }
+                  }
+                  const edge = 0.5*(Math.sqrt(b2) - Math.sqrt(b1));
+                  const q = edge/bulgeRange;
+                  const fall = q >= 1 ? 0 : (1-q*q)*(1-q*q);
+                  const tLoc = tHalf + P.bulge*fall;
+                  val = smax(ad - tLoc, edge - w, P.blend);
+                }
+              }
+              if(mB > 0 && mB < 1) val = val*(1-mB) + (Math.max(d0, -d0 - P.shell))*mB;
+              if(jx===0||jy===0||jz===0||jx===nx||jy===ny||jz===nz) val = Math.max(val, vox*0.5);
+              F[base+jx] = val;
+            }
+          }
+        }
+      }
+    }
+    if(performance.now()-t0 > 30){
+      progress(0.45 + 0.3*bz/NZ, 'evaluating field');
+      await tick(); t0 = performance.now();
+    }
+  }
+  return F;
+}
+
+async function blurField(F, grid, progress){
+  const {nx,ny,nz} = grid;
+  const NX=nx+1, NY=ny+1, NZ=nz+1;
+  const tmp = new Float32Array(F.length);
+  const passes = [ {stride:1, n:NX}, {stride:NX, n:NY}, {stride:NX*NY, n:NZ} ];
+  for(let p=0; p<3; p++){
+    const {stride, n} = passes[p];
+    tmp.set(F);
+    for(let jz=0; jz<NZ; jz++){
+      for(let jy=0; jy<NY; jy++){
+        for(let jx=0; jx<NX; jx++){
+          const axisIdx = p===0 ? jx : p===1 ? jy : jz;
+          if(axisIdx===0 || axisIdx===n-1) continue;
+          const i = (jz*NY+jy)*NX+jx;
+          F[i] = 0.25*tmp[i-stride] + 0.5*tmp[i] + 0.25*tmp[i+stride];
+        }
+      }
+      if((jz & 63)===0) progress(0.72 + 0.01*p, 'filtering field');
+    }
+    await tick();
+  }
+}
+
+const CUBE_OFF = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+const TETS = [[0,5,1,6],[0,1,2,6],[0,2,3,6],[0,3,7,6],[0,7,4,6],[0,4,5,6]];
+
+async function polygonizeMT(F, grid, progress){
+  const {minx,miny,minz,nx,ny,nz,vox} = grid;
+  const NX=nx+1, NY=ny+1;
+  const NN = NX*NY*(nz+1);
+  const positions = [];
+  const indices = [];
+  const edgeMap = new Map();
+  const cv = new Float32Array(8);
+  const cn = new Int32Array(8);
+  const cp = new Float32Array(24);
+  const tv = new Float32Array(4);
+  const tn = new Int32Array(4);
+  const tp = new Float32Array(12);
+  const evi = new Int32Array(6);
+  function edgeVertex(slot, a, b){
+    const na=tn[a], nb=tn[b];
+    const key = na<nb ? na*NN+nb : nb*NN+na;
+    let idx = edgeMap.get(key);
+    if(idx===undefined){
+      const va=tv[a], vb=tv[b];
+      const t = va/(va-vb);
+      idx = positions.length/3;
+      positions.push(
+        tp[a*3]   + t*(tp[b*3]  -tp[a*3]),
+        tp[a*3+1] + t*(tp[b*3+1]-tp[a*3+1]),
+        tp[a*3+2] + t*(tp[b*3+2]-tp[a*3+2]),
+      );
+      edgeMap.set(key, idx);
+    }
+    evi[slot] = idx;
+  }
+  function emitTri(s0,s1,s2, rx,ry,rz){
+    const i0=evi[s0], i1=evi[s1], i2=evi[s2];
+    const a=i0*3, b=i1*3, c=i2*3;
+    const ax=positions[a],ay=positions[a+1],az=positions[a+2];
+    const ux=positions[b]-ax,   uy=positions[b+1]-ay, uz=positions[b+2]-az;
+    const vx=positions[c]-ax,   vy=positions[c+1]-ay, vz=positions[c+2]-az;
+    const nx_=uy*vz-uz*vy, ny_=uz*vx-ux*vz, nz_=ux*vy-uy*vx;
+    const mx=(ax+positions[b]+positions[c])/3-rx;
+    const my=(ay+positions[b+1]+positions[c+1])/3-ry;
+    const mz=(az+positions[b+2]+positions[c+2])/3-rz;
+    if(nx_*mx+ny_*my+nz_*mz < 0) indices.push(i0,i2,i1);
+    else indices.push(i0,i1,i2);
+  }
+  let t0 = performance.now();
+  for(let jz=0; jz<nz; jz++){
+    for(let jy=0; jy<ny; jy++){
+      for(let jx=0; jx<nx; jx++){
+        let neg=false, pos=false;
+        for(let k=0;k<8;k++){
+          const o=CUBE_OFF[k];
+          const ni = ((jz+o[2])*NY + (jy+o[1]))*NX + (jx+o[0]);
+          let v = F[ni];
+          if(v===0) v = -1e-7;
+          cv[k]=v; cn[k]=ni;
+          if(v<0) neg=true; else pos=true;
+        }
+        if(!neg || !pos) continue;
+        for(let k=0;k<8;k++){
+          const o=CUBE_OFF[k];
+          cp[k*3]   = minx + (jx+o[0])*vox;
+          cp[k*3+1] = miny + (jy+o[1])*vox;
+          cp[k*3+2] = minz + (jz+o[2])*vox;
+        }
+        for(const tet of TETS){
+          let code = 0;
+          for(let k=0;k<4;k++){
+            const ci = tet[k];
+            tv[k]=cv[ci]; tn[k]=cn[ci];
+            tp[k*3]=cp[ci*3]; tp[k*3+1]=cp[ci*3+1]; tp[k*3+2]=cp[ci*3+2];
+            if(cv[ci] < 0) code |= (1<<k);
+          }
+          if(code===0 || code===15) continue;
+          const inside=[], outside=[];
+          for(let k=0;k<4;k++) (code&(1<<k) ? inside : outside).push(k);
+          if(inside.length===1){
+            const i=inside[0];
+            edgeVertex(0, i, outside[0]); edgeVertex(1, i, outside[1]); edgeVertex(2, i, outside[2]);
+            emitTri(0,1,2, tp[i*3],tp[i*3+1],tp[i*3+2]);
+          } else if(inside.length===3){
+            const o=outside[0];
+            const rx=(tp[inside[0]*3]+tp[inside[1]*3]+tp[inside[2]*3])/3;
+            const ry=(tp[inside[0]*3+1]+tp[inside[1]*3+1]+tp[inside[2]*3+1])/3;
+            const rz=(tp[inside[0]*3+2]+tp[inside[1]*3+2]+tp[inside[2]*3+2])/3;
+            edgeVertex(0, inside[0], o); edgeVertex(1, inside[1], o); edgeVertex(2, inside[2], o);
+            emitTri(0,1,2, rx,ry,rz);
+          } else {
+            const [i0,i1]=inside, [o0,o1]=outside;
+            const rx=(tp[i0*3]+tp[i1*3])/2, ry=(tp[i0*3+1]+tp[i1*3+1])/2, rz=(tp[i0*3+2]+tp[i1*3+2])/2;
+            edgeVertex(0, i0, o0); edgeVertex(1, i0, o1); edgeVertex(2, i1, o1); edgeVertex(3, i1, o0);
+            emitTri(0,1,2, rx,ry,rz); emitTri(0,2,3, rx,ry,rz);
+          }
+        }
+      }
+    }
+    if(performance.now()-t0 > 30){
+      progress(0.75 + 0.22*jz/nz, 'polygonizing');
+      await tick(); t0 = performance.now();
+    }
+  }
+  return { positions: new Float32Array(positions), indices: new Uint32Array(indices) };
+}
+
+function makeGridSampler(D, grid){
+  const {minx,miny,minz,nx,ny,nz,vox} = grid;
+  const NX=nx+1, NY=ny+1;
+  return (x,y,z)=>{
+    let fx=clamp((x-minx)/vox, 0, nx-1e-4), fy=clamp((y-miny)/vox, 0, ny-1e-4), fz=clamp((z-minz)/vox, 0, nz-1e-4);
+    const ix=Math.floor(fx), iy=Math.floor(fy), iz=Math.floor(fz);
+    const tx=fx-ix, ty=fy-iy, tz=fz-iz;
+    let a=0;
+    for(let dz=0;dz<2;dz++)for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
+      a += (dx?tx:1-tx)*(dy?ty:1-ty)*(dz?tz:1-tz) * D[((iz+dz)*NY+(iy+dy))*NX+(ix+dx)];
+    }
+    return a;
+  };
+}
+
+function clampInsideSDF(positions, sdf){
+  const e = 0.2;
+  for(let i=0;i<positions.length;i+=3){
+    let x=positions[i], y=positions[i+1], z=positions[i+2];
+    let moved = false;
+    for(let k=0;k<2;k++){
+      const d = sdf(x,y,z);
+      if(d <= 0) break;
+      const gx = sdf(x+e,y,z)-sdf(x-e,y,z);
+      const gy = sdf(x,y+e,z)-sdf(x,y-e,z);
+      const gz = sdf(x,y,z+e)-sdf(x,y,z-e);
+      const l = Math.hypot(gx,gy,gz) || 1;
+      x -= d*gx/l; y -= d*gy/l; z -= d*gz/l;
+      moved = true;
+    }
+    if(moved){ positions[i]=x; positions[i+1]=y; positions[i+2]=z; }
+  }
+}
+
+function analyzeComponents(positions, indices){
+  const nV = positions.length/3;
+  const parent = new Int32Array(nV);
+  for(let i=0;i<nV;i++) parent[i]=i;
+  const find = a => { while(parent[a]!==a){ parent[a]=parent[parent[a]]; a=parent[a]; } return a; };
+  for(let t=0;t<indices.length;t+=3){
+    const a=find(indices[t]);
+    const b=find(indices[t+1]); if(b!==a) parent[b]=a;
+    const c=find(indices[t+2]); const a2=find(a); if(find(c)!==a2) parent[find(c)]=a2;
+  }
+  const volByRoot = new Map(), triByRoot = new Map();
+  for(let t=0;t<indices.length;t+=3){
+    const a=indices[t]*3, b=indices[t+1]*3, c=indices[t+2]*3;
+    const v6 = positions[a]*(positions[b+1]*positions[c+2]-positions[b+2]*positions[c+1])
+             - positions[a+1]*(positions[b]*positions[c+2]-positions[b+2]*positions[c])
+             + positions[a+2]*(positions[b]*positions[c+1]-positions[b+1]*positions[c]);
+    const r = find(indices[t]);
+    volByRoot.set(r, (volByRoot.get(r)||0) + v6/6);
+    triByRoot.set(r, (triByRoot.get(r)||0) + 1);
+  }
+  const list = [...volByRoot.entries()]
+    .map(([root,volume]) => ({root, volume: Math.abs(volume), triCount: triByRoot.get(root)}))
+    .sort((p,q) => q.volume - p.volume);
+  return {list, find};
+}
+
+function filterComponents(indices, find, keepRoots){
+  const out = [];
+  for(let t=0;t<indices.length;t+=3){
+    if(keepRoots.has(find(indices[t]))) out.push(indices[t], indices[t+1], indices[t+2]);
+  }
+  return new Uint32Array(out);
+}
+
+function countMeshPieces(tris){
+  const map = new Map();
+  const nV = tris.length/3;
+  const vid = new Int32Array(nV);
+  let nUnique = 0;
+  for(let i=0;i<nV;i++){
+    const k = Math.round(tris[i*3]*1000)+'_'+Math.round(tris[i*3+1]*1000)+'_'+Math.round(tris[i*3+2]*1000);
+    let id = map.get(k);
+    if(id===undefined){ id = nUnique++; map.set(k,id); }
+    vid[i] = id;
+  }
+  const parent = new Int32Array(nUnique);
+  for(let i=0;i<nUnique;i++) parent[i]=i;
+  const find = a => { while(parent[a]!==a){ parent[a]=parent[parent[a]]; a=parent[a]; } return a; };
+  for(let t=0;t<nV;t+=3){
+    const a=find(vid[t]);
+    const b=find(vid[t+1]); if(b!==a) parent[b]=a;
+    const c=find(vid[t+2]); const a2=find(a); if(find(c)!==a2) parent[find(c)]=a2;
+  }
+  const roots = new Set();
+  for(let i=0;i<nUnique;i++) roots.add(find(i));
+  return roots.size;
+}
+
+function meshChecks(positions, indices){
+  const edgeCount = new Map();
+  for(let t=0;t<indices.length;t+=3){
+    for(let e=0;e<3;e++){
+      const a=indices[t+e], b=indices[t+(e+1)%3];
+      const k = a<b ? a*16777216+b : b*16777216+a;
+      edgeCount.set(k, (edgeCount.get(k)||0)+1);
+    }
+  }
+  let boundary=0, nonManifold=0;
+  for(const c of edgeCount.values()){
+    if(c===1) boundary++;
+    else if(c>2) nonManifold++;
+  }
+  let vol6=0;
+  for(let t=0;t<indices.length;t+=3){
+    const a=indices[t]*3,b=indices[t+1]*3,c=indices[t+2]*3;
+    vol6 += positions[a]*(positions[b+1]*positions[c+2]-positions[b+2]*positions[c+1])
+          - positions[a+1]*(positions[b]*positions[c+2]-positions[b+2]*positions[c])
+          + positions[a+2]*(positions[b]*positions[c+1]-positions[b+1]*positions[c]);
+  }
+  return { boundary, nonManifold, volume: vol6/6 };
+}
+
+async function taubinSmooth(positions, indices, iterations, progress, pin){
+  const nV = positions.length/3;
+  const acc = new Float32Array(positions.length);
+  const cnt = new Int32Array(nV);
+  const LAMBDA = 0.5, MU = -0.53;
+  let t0 = performance.now();
+  for(let it=0; it<iterations; it++){
+    for(const f of [LAMBDA, MU]){
+      acc.fill(0); cnt.fill(0);
+      for(let t=0;t<indices.length;t+=3){
+        const a=indices[t], b=indices[t+1], c=indices[t+2];
+        const a3=a*3, b3=b*3, c3=c*3;
+        acc[a3]+=positions[b3]+positions[c3]; acc[a3+1]+=positions[b3+1]+positions[c3+1]; acc[a3+2]+=positions[b3+2]+positions[c3+2]; cnt[a]+=2;
+        acc[b3]+=positions[a3]+positions[c3]; acc[b3+1]+=positions[a3+1]+positions[c3+1]; acc[b3+2]+=positions[a3+2]+positions[c3+2]; cnt[b]+=2;
+        acc[c3]+=positions[a3]+positions[b3]; acc[c3+1]+=positions[a3+1]+positions[b3+1]; acc[c3+2]+=positions[a3+2]+positions[b3+2]; cnt[c]+=2;
+      }
+      for(let v=0; v<nV; v++){
+        const n = cnt[v];
+        if(!n) continue;
+        // painted-pinned skin holds its exact placement — damp by pin weight
+        const g = pin ? f*(1-pin[v]) : f;
+        if(g === 0) continue;
+        const v3=v*3;
+        positions[v3]   += g*(acc[v3]/n   - positions[v3]);
+        positions[v3+1] += g*(acc[v3+1]/n - positions[v3+1]);
+        positions[v3+2] += g*(acc[v3+2]/n - positions[v3+2]);
+      }
+    }
+    if(performance.now()-t0 > 40){
+      progress(0.93, `smoothing (${it+1}/${iterations})`);
+      await tick(); t0 = performance.now();
+    }
+  }
+}
+
+/* ============================== three.js scene ============================== */
+
+const viewport = document.getElementById('viewport');
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+viewport.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x191b20);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 4000);
+camera.up.set(0,0,1);
+camera.position.set(140,-140,100);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+window.__three = { camera, controls, scene, THREE };
+
+scene.add(new THREE.HemisphereLight(0xcdd6e8, 0x2c2620, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(80,-110,140); scene.add(key);
+const fill = new THREE.DirectionalLight(0xbfd4ff, 0.7); fill.position.set(-120,60,40); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffe6c4, 0.9); rim.position.set(30,130,-60); scene.add(rim);
+
+const grid = new THREE.GridHelper(300, 30, 0x39404d, 0x252a33);
+grid.rotation.x = Math.PI/2;
+scene.add(grid);
+
+const shellMat = new THREE.MeshStandardMaterial({color:0xf1ede4, roughness:0.5, metalness:0.02});
+const ghostMat = new THREE.MeshStandardMaterial({color:0x5db4e8, roughness:0.7, transparent:true, opacity:0.16, depthWrite:false});
+
+let shellMesh = null, ghostMesh = null;
+
+function setShellGeometry(positions, indices){
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
+  geo.computeVertexNormals();
+  if(shellMesh){ scene.remove(shellMesh); shellMesh.geometry.dispose(); }
+  shellMesh = new THREE.Mesh(geo, shellMat);
+  shellMesh.visible = !inputPreviewOn; // don't poke through an open ⌥ preview
+  scene.add(shellMesh);
+}
+
+function shapeGeometry(shape){
+  if(shape.name==='sphere'){
+    return new THREE.SphereGeometry(shape.radius, 48, 32);
+  } else if(shape.name==='cube'){
+    const s = shape.half*2;
+    return new THREE.BoxGeometry(s,s,s);
+  } else if(shape.profile){
+    // resample long straight profile runs: overlays and surface-click patch
+    // fitting need uniform vertex support, and LatheGeometry adds none mid-segment
+    const src = shape.profile, pts = [];
+    for(let i=0;i<src.length-1;i++){
+      const [r0,z0]=src[i], [r1,z1]=src[i+1];
+      const steps = Math.max(1, Math.ceil(Math.hypot(r1-r0,z1-z0)/1.2));
+      for(let s=0;s<steps;s++) pts.push(new THREE.Vector2(r0+(r1-r0)*s/steps, z0+(z1-z0)*s/steps));
+    }
+    pts.push(new THREE.Vector2(src[src.length-1][0], src[src.length-1][1]));
+    const geo = new THREE.LatheGeometry(pts, 128);
+    geo.rotateX(Math.PI/2);
+    return geo;
+  } else if(shape.kind==='mesh'){
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(shape.tris.slice(), 3));
+    geo.computeVertexNormals();
+    return geo;
+  }
+  return null;
+}
+
+function setGhost(shape){
+  if(ghostMesh){ scene.remove(ghostMesh); ghostMesh.geometry.dispose(); ghostMesh=null; }
+  if(!document.getElementById('ghost').checked) return;
+  const geo = shapeGeometry(shape);
+  if(geo){
+    ghostMesh = new THREE.Mesh(geo, ghostMat);
+    ghostMesh.visible = !inputPreviewOn;
+    scene.add(ghostMesh);
+  }
+}
+
+// ---- solid surfaces: click a surface in the Option preview; it is detected by
+// primitive fit (plane OR sphere, whichever fits the local patch better) and
+// the whole matching surface stays a solid thin shell with no organoid holes ----
+// z-anisotropy for the seed metric (overhang bias): 1 = isotropic; <1 stretches
+// cells vertically so Voronoi struts run steeper. Set per-generate from P.
+let ANISO = 1;
+
+let solidSels = []; // {type:'plane', n:[..], d} | {type:'sphere', c0:[..], R}; + hit:[..], boundR
+const MASK_TOL = 3.5;      // mask capture depth (covers shell thickness + bulge)
+const MASK_BAND = 6.5;     // lateral skin→web transition width: must give the
+                           // surface room to morph from exact skin to the
+                           // print-safe rounded web shape (~offset depth + margin)
+const FIT_TOL = 0.7;       // how close a vertex must be to the primitive to belong
+
+function selDist(s, x, y, z){
+  if(s.type==='plane') return Math.abs(s.n[0]*x + s.n[1]*y + s.n[2]*z - s.d);
+  if(s.type==='cyl') return Math.abs(Math.hypot(x,y) - s.R); // z-axis cylinder (lathe wall)
+  const dx=x-s.c0[0], dy=y-s.c0[1], dz=z-s.c0[2];
+  if(s.type==='ball') return Math.max(0, Math.hypot(dx,dy,dz) - s.R); // brush blob: 0 inside
+  return Math.abs(Math.hypot(dx,dy,dz) - s.R);
+}
+function smooth01(t){ return t<=0 ? 0 : t>=1 ? 1 : t*t*(3-2*t); }
+// 1 = fully inside a selected solid surface, 0 = organic web, smooth in between
+function maskBlend(x,y,z){
+  let best = 0;
+  for(const s of solidSels){
+    const bx=x-s.hit[0], by=y-s.hit[1], bz=z-s.hit[2];
+    const hd = Math.sqrt(bx*bx+by*by+bz*bz);
+    if(hd > s.boundR + MASK_TOL) continue;
+    const sd = selDist(s, x, y, z);
+    if(sd >= MASK_TOL) continue;
+    const m = (1 - smooth01((sd - 1.2)/(MASK_TOL - 1.2))) *
+              (1 - smooth01((hd - s.boundR)/MASK_BAND));
+    if(m > best){ best = m; if(best >= 1) return 1; }
+  }
+  return best;
+}
+function maskAt(x,y,z){
+  // membrane cutoff 0.35 keeps every open hole strictly outside the painted
+  // morph band (profile pin reaches zero at 0.45): hole-rim tubes never
+  // straddle the exact-skin → smoothed-web transition
+  return solidSels.length > 0 && maskBlend(x,y,z) >= 0.35;
+}
+function fitSphere(pts){
+  const A = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]], B=[0,0,0,0];
+  const n = pts.length/3;
+  for(let i=0;i<n;i++){
+    const x=pts[i*3], y=pts[i*3+1], z=pts[i*3+2];
+    const row=[2*x, 2*y, 2*z, 1], b=x*x+y*y+z*z;
+    for(let r=0;r<4;r++){ for(let c=0;c<4;c++) A[r][c]+=row[r]*row[c]; B[r]+=row[r]*b; }
+  }
+  for(let i=0;i<4;i++){
+    let p=i;
+    for(let r=i+1;r<4;r++) if(Math.abs(A[r][i])>Math.abs(A[p][i])) p=r;
+    [A[i],A[p]]=[A[p],A[i]]; [B[i],B[p]]=[B[p],B[i]];
+    if(Math.abs(A[i][i])<1e-9) return null;
+    for(let r=i+1;r<4;r++){ const f=A[r][i]/A[i][i]; for(let c=i;c<4;c++)A[r][c]-=f*A[i][c]; B[r]-=f*B[i]; }
+  }
+  const X=[0,0,0,0];
+  for(let i=3;i>=0;i--){ let s=B[i]; for(let c=i+1;c<4;c++)s-=A[i][c]*X[c]; X[i]=s/A[i][i]; }
+  const c0=[X[0],X[1],X[2]];
+  const R=Math.sqrt(Math.max(0, X[3]+c0[0]*c0[0]+c0[1]*c0[1]+c0[2]*c0[2]));
+  let rms=0;
+  for(let i=0;i<n;i++){
+    const d=Math.hypot(pts[i*3]-c0[0],pts[i*3+1]-c0[1],pts[i*3+2]-c0[2])-R;
+    rms+=d*d;
+  }
+  return {c0, R, rms: Math.sqrt(rms/n)};
+}
+
+// detect the surface under a raycast hit and toggle it as a solid selection
+function toggleSurfaceAt(hit){
+  const p = hit.point;
+  // clicking an already-selected surface deselects it
+  for(let i=0;i<solidSels.length;i++){
+    if(selDist(solidSels[i], p.x, p.y, p.z) < 1.2){
+      const s = solidSels[i];
+      const bx=p.x-s.hit[0], by=p.y-s.hit[1], bz=p.z-s.hit[2];
+      if(bx*bx+by*by+bz*bz <= (s.boundR+2)*(s.boundR+2)){
+        solidSels.splice(i,1);
+        refreshSelOverlay();
+        return 'removed';
+      }
+    }
+  }
+  const posAttr = inputPreviewMesh.geometry.getAttribute('position');
+  const nrmAttr = inputPreviewMesh.geometry.getAttribute('normal');
+  const fn = hit.face.normal;
+  const n = [fn.x, fn.y, fn.z];
+
+  // multi-scale patches with trimmed refits: small radii resolve narrow
+  // features (the flat rim ring between fillets); large radii condition the
+  // sphere fit on gentle curvature (the dish). Outliers from neighbouring
+  // fillets are trimmed out instead of polluting the fit.
+  const cands = [];
+  for(const rad of [3, 5, 8, 12, 16]){
+    const r2 = rad*rad, patch = [];
+    for(let i=0;i<posAttr.count;i++){
+      const x=posAttr.getX(i), y=posAttr.getY(i), z=posAttr.getZ(i);
+      const dx=x-p.x, dy=y-p.y, dz=z-p.z;
+      if(dx*dx+dy*dy+dz*dz < r2) patch.push(x,y,z);
+    }
+    if(patch.length/3 < 16) continue;
+    // plane: normal fixed by the hit face, offset refit on trimmed inliers
+    let d = n[0]*p.x + n[1]*p.y + n[2]*p.z;
+    for(let it=0; it<3 && d!==null; it++){
+      let sum=0, ss=0, cnt=0;
+      for(let i=0;i<patch.length;i+=3){
+        const e = n[0]*patch[i]+n[1]*patch[i+1]+n[2]*patch[i+2]-d;
+        if(it>0 && Math.abs(e) > 0.45) continue;
+        sum+=e; ss+=e*e; cnt++;
+      }
+      if(cnt < 8){ d = null; break; }
+      const mean = sum/cnt;
+      d += mean;
+      if(it===2){
+        const rms = Math.sqrt(Math.max(0, ss/cnt - mean*mean));
+        if(rms < 0.3) cands.push({type:'plane', n, d, rms});
+      }
+    }
+    // sphere: algebraic fit, then trimmed refit
+    let sp = fitSphere(patch);
+    for(let it=0; it<2 && sp; it++){
+      const inl = [];
+      for(let i=0;i<patch.length;i+=3){
+        const e = Math.hypot(patch[i]-sp.c0[0], patch[i+1]-sp.c0[1], patch[i+2]-sp.c0[2]) - sp.R;
+        if(Math.abs(e) < 0.45) inl.push(patch[i], patch[i+1], patch[i+2]);
+      }
+      if(inl.length/3 < 10){ sp = null; break; }
+      sp = fitSphere(inl);
+    }
+    if(sp && sp.R <= 400 && sp.rms < 0.3)
+      cands.push({type:'sphere', c0:[+sp.c0[0].toFixed(2), +sp.c0[1].toFixed(2), +sp.c0[2].toFixed(2)], R:+sp.R.toFixed(2), rms:sp.rms});
+    // z-axis cylinder (lathe barrel wall): radius refit on trimmed inliers
+    let cr = Math.hypot(p.x, p.y);
+    for(let it=0; it<3 && cr!==null; it++){
+      let sum=0, ss=0, cnt=0;
+      for(let i=0;i<patch.length;i+=3){
+        const e = Math.hypot(patch[i], patch[i+1]) - cr;
+        if(it>0 && Math.abs(e) > 0.45) continue;
+        sum+=e; ss+=e*e; cnt++;
+      }
+      if(cnt < 8){ cr = null; break; }
+      const mean = sum/cnt;
+      cr += mean;
+      if(it===2){
+        const rms = Math.sqrt(Math.max(0, ss/cnt - mean*mean));
+        if(rms < 0.3 && cr > 2) cands.push({type:'cyl', R:+cr.toFixed(2), rms});
+      }
+    }
+  }
+  if(!cands.length) return 'too small';
+
+  // pick the candidate whose matched surface is largest — a junk fit from a
+  // polluted patch only ever matches a small local blob, the true primitive
+  // matches the whole ring / dish / face (normal-checked both ways)
+  let best = null;
+  const diag = [];
+  for(const c of cands){
+    const sel = {type:c.type, n:c.n, d:c.d, c0:c.c0, R:c.R, hit:[p.x,p.y,p.z]};
+    if(selDist(sel, p.x, p.y, p.z) > FIT_TOL){ diag.push({type:c.type, R:c.R, rms:+c.rms.toFixed(3), skip:'click'}); continue; }
+    let count = 0, boundR = 6;
+    for(let i=0;i<posAttr.count;i++){
+      const x=posAttr.getX(i), y=posAttr.getY(i), z=posAttr.getZ(i);
+      if(selDist(sel, x, y, z) > FIT_TOL) continue;
+      if(!selMatchesNormal(sel, x,y,z, nrmAttr.getX(i), nrmAttr.getY(i), nrmAttr.getZ(i))) continue;
+      count++;
+      const dx=x-p.x, dy=y-p.y, dz=z-p.z;
+      const dd = dx*dx+dy*dy+dz*dz;
+      if(dd > boundR*boundR) boundR = Math.sqrt(dd);
+    }
+    diag.push({type:c.type, R:c.R, rms:+c.rms.toFixed(3), count});
+    if(count >= 20 && (!best || count > best.count)) best = {sel, count, boundR};
+  }
+  toggleSurfaceAt.diag = diag;
+  if(!best) return 'too small';
+  const sel = best.sel;
+  if(sel.type==='plane'){ delete sel.c0; delete sel.R; }
+  else if(sel.type==='cyl'){ delete sel.n; delete sel.d; delete sel.c0; }
+  else { delete sel.n; delete sel.d; }
+  sel.boundR = +best.boundR.toFixed(1);
+  solidSels.push(sel);
+  refreshSelOverlay();
+  return sel.type;
+}
+function selMatchesNormal(sel, x,y,z, nx,ny,nz){
+  if(sel.type==='ball') return true; // brush blob masks any orientation
+  if(sel.type==='cyl'){
+    const r = Math.hypot(x,y) || 1;
+    return Math.abs((x*nx + y*ny)/r) > 0.55; // radial either way
+  }
+  if(sel.type==='plane')
+    return sel.n[0]*nx + sel.n[1]*ny + sel.n[2]*nz > 0.55;
+  const dx=x-sel.c0[0], dy=y-sel.c0[1], dz=z-sel.c0[2];
+  const l = Math.hypot(dx,dy,dz)||1;
+  return Math.abs((dx*nx+dy*ny+dz*nz)/l) > 0.55; // radial either way (dish or dome)
+}
+
+// red highlight over the selected surfaces (rebuilt from the preview mesh)
+const paintGroup = new THREE.Group();
+paintGroup.visible = false;
+scene.add(paintGroup);
+const paintMat = new THREE.MeshStandardMaterial({color:0xe0524a, roughness:0.55, transparent:true, opacity:0.55,
+  depthWrite:false, polygonOffset:true, polygonOffsetFactor:-2, side:THREE.DoubleSide});
+function refreshSelOverlay(){
+  while(paintGroup.children.length){
+    const c = paintGroup.children.pop();
+    c.geometry.dispose();
+  }
+  if(!inputPreviewMesh || !solidSels.length) return;
+  const geo = inputPreviewMesh.geometry;
+  const posAttr = geo.getAttribute('position');
+  const nrmAttr = geo.getAttribute('normal');
+  const matched = new Uint8Array(posAttr.count);
+  for(let i=0;i<posAttr.count;i++){
+    const x=posAttr.getX(i), y=posAttr.getY(i), z=posAttr.getZ(i);
+    for(const s of solidSels){
+      const bx=x-s.hit[0], by=y-s.hit[1], bz=z-s.hit[2];
+      if(bx*bx+by*by+bz*bz > (s.boundR+2)*(s.boundR+2)) continue;
+      if(selDist(s,x,y,z) < FIT_TOL &&
+         selMatchesNormal(s, x,y,z, nrmAttr.getX(i), nrmAttr.getY(i), nrmAttr.getZ(i))){
+        matched[i]=1; break;
+      }
+    }
+  }
+  const out = [];
+  const idx = geo.getIndex();
+  const triCount = idx ? idx.count/3 : posAttr.count/3;
+  const vid = t3 => idx ? idx.getX(t3) : t3;
+  for(let t=0;t<triCount;t++){
+    const a=vid(t*3), b=vid(t*3+1), c=vid(t*3+2);
+    if(!(matched[a] && matched[b] && matched[c])) continue;
+    for(const v of [a,b,c]){
+      out.push(
+        posAttr.getX(v) + nrmAttr.getX(v)*0.25,
+        posAttr.getY(v) + nrmAttr.getY(v)*0.25,
+        posAttr.getZ(v) + nrmAttr.getZ(v)*0.25,
+      );
+    }
+  }
+  if(out.length){
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, paintMat);
+    m.renderOrder = 10; // draw on top of translucent overlays
+    paintGroup.add(m);
+  }
+}
+
+
+const inputPreviewMat = new THREE.MeshStandardMaterial({color:0x9fc4e8, roughness:0.55, metalness:0.02});
+let inputPreviewMesh = null, inputPreviewOn = false;
+function showInputPreview(on){
+  if(on === inputPreviewOn) return;
+  inputPreviewOn = on;
+  if(on){
+    let geo = null, shp = null;
+    try{
+      const P = readParams();
+      shp = makeShape(P);
+      geo = shapeGeometry(shp);
+    }catch(e){}
+    if(!geo){ inputPreviewOn = false; return; }
+    inputPreviewMesh = new THREE.Mesh(geo, inputPreviewMat);
+    scene.add(inputPreviewMesh);
+    refreshSelOverlay();
+    paintGroup.visible = true;
+    if(shellMesh) shellMesh.visible = false;
+    if(ghostMesh) ghostMesh.visible = false;
+  } else {
+    if(brushStroke){ brushStroke = false; controls.enabled = true; } // stroke cut short
+    if(brushGhost) brushGhost.visible = false;
+    if(inputPreviewMesh){
+      scene.remove(inputPreviewMesh);
+      inputPreviewMesh.geometry.dispose();
+      inputPreviewMesh = null;
+    }
+    paintGroup.visible = false;
+    if(shellMesh) shellMesh.visible = true;
+    if(ghostMesh) ghostMesh.visible = true;
+  }
+}
+
+// solid-surface tools on the preview: smart select = click a surface (drag
+// still orbits); sphere brush = drag to paint blobs (orbit disabled mid-stroke)
+const raycaster = new THREE.Raycaster();
+const pointerV = new THREE.Vector2();
+function raycastPreview(e){
+  if(!inputPreviewMesh) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerV.set(((e.clientX-rect.left)/rect.width)*2-1, -((e.clientY-rect.top)/rect.height)*2+1);
+  raycaster.setFromCamera(pointerV, camera);
+  const hits = raycaster.intersectObject(inputPreviewMesh, false);
+  return hits.length ? hits[0] : null;
+}
+function afterSelChange(msg){
+  statusEl.textContent = msg;
+  clearTimeout(debounceT);
+  if($('auto').checked) debounceT = setTimeout(generate, 600);
+}
+let clickStart = null;
+let brushStroke = false, lastBall = null;
+function paintBallAt(pt){
+  const R = (+$('brushR').value)/2;
+  solidSels.push({type:'ball', c0:[pt.x,pt.y,pt.z], R, hit:[pt.x,pt.y,pt.z], boundR:R});
+  refreshSelOverlay();
+}
+// hover ghost: shows the brush sphere at the cursor before painting
+const brushGhostMat = new THREE.MeshStandardMaterial({color:0xe0524a, roughness:0.6,
+  transparent:true, opacity:0.35, depthWrite:false});
+let brushGhost = null;
+function updateBrushGhost(hit){
+  const show = !!hit && inputPreviewOn && $('selTool').value === 'brush';
+  if(show){
+    if(!brushGhost){
+      brushGhost = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), brushGhostMat);
+      brushGhost.renderOrder = 11;
+      scene.add(brushGhost);
+    }
+    brushGhost.scale.setScalar((+$('brushR').value)/2);
+    brushGhost.position.copy(hit.point);
+    brushGhost.visible = true;
+  } else if(brushGhost) brushGhost.visible = false;
+}
+// capture phase so the brush can claim the pointer before OrbitControls does
+renderer.domElement.addEventListener('pointerdown', e=>{
+  if(!inputPreviewOn) return;
+  if($('selTool').value === 'brush'){
+    const hit = raycastPreview(e);
+    if(!hit) return; // missed the shape — let the orbit happen
+    controls.enabled = false;
+    brushStroke = true;
+    lastBall = hit.point.clone();
+    paintBallAt(hit.point);
+    return;
+  }
+  clickStart = [e.clientX, e.clientY];
+}, true);
+renderer.domElement.addEventListener('pointermove', e=>{
+  const brushMode = inputPreviewOn && $('selTool').value === 'brush';
+  if(!brushMode){ if(brushGhost) brushGhost.visible = false; return; }
+  const hit = raycastPreview(e);
+  updateBrushGhost(hit);
+  if(!brushStroke || !hit) return;
+  const R = (+$('brushR').value)/2;
+  if(hit.point.distanceTo(lastBall) < Math.max(2, R*0.5)) return;
+  lastBall = hit.point.clone();
+  paintBallAt(hit.point);
+}, true);
+renderer.domElement.addEventListener('pointerleave', ()=>{ if(brushGhost) brushGhost.visible = false; });
+window.addEventListener('pointerup', e=>{
+  if(brushStroke){
+    brushStroke = false;
+    controls.enabled = true;
+    afterSelChange('Painted solid patch — it will stay a solid thin shell.');
+    return;
+  }
+  if(!inputPreviewOn || !clickStart || !inputPreviewMesh) { clickStart = null; return; }
+  const moved = Math.hypot(e.clientX-clickStart[0], e.clientY-clickStart[1]);
+  clickStart = null;
+  if(moved > 5) return; // it was an orbit drag
+  const hit = raycastPreview(e);
+  if(!hit) return;
+  const what = toggleSurfaceAt(hit);
+  afterSelChange(what==='removed' ? 'Surface deselected.' :
+    what==='too small' ? 'Could not detect a surface there.' :
+    `Selected a ${what==='plane' ? 'flat' : what==='cyl' ? 'cylindrical' : 'spherical'} surface — it will stay solid.`);
+}, true);
+// preview is shown while ⌥ is held OR pinned by the "Show input shape" box
+// (plain getElementById: the $ helper is declared further down — TDZ)
+const showInputCb = document.getElementById('showInput');
+const previewPinned = ()=> showInputCb.checked;
+window.addEventListener('keydown', e=>{ if(e.key==='Alt'){ e.preventDefault(); showInputPreview(true); } });
+window.addEventListener('keyup', e=>{ if(e.key==='Alt') showInputPreview(previewPinned()); });
+window.addEventListener('blur', ()=> showInputPreview(previewPinned()));
+showInputCb.addEventListener('change', ()=> showInputPreview(previewPinned()));
+// a pinned preview must track shape-parameter edits (⌥-hold rebuilds on every
+// press, but a pinned mesh would go stale) — rebuild by toggling off and on
+function refreshInputPreview(){
+  if(!inputPreviewOn || !previewPinned()) return;
+  showInputPreview(false);
+  showInputPreview(true);
+}
+
+function frameObject(bb){
+  const cx=(bb.min[0]+bb.max[0])/2, cy=(bb.min[1]+bb.max[1])/2, cz=(bb.min[2]+bb.max[2])/2;
+  const r = Math.max(bb.max[0]-bb.min[0], bb.max[1]-bb.min[1], bb.max[2]-bb.min[2]) * 0.5 * Math.sqrt(3);
+  const dir = new THREE.Vector3(1,-1.1,0.75).normalize();
+  controls.target.set(cx,cy,cz);
+  camera.position.set(cx,cy,cz).addScaledVector(dir, r*3.2);
+  grid.position.set(0,0,bb.min[2]-1);
+  controls.update();
+}
+
+function resize(){
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  renderer.setSize(w,h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+renderer.setAnimationLoop(()=>{ controls.update(); renderer.render(scene, camera); });
+
+/* ============================== app / UI ============================== */
+
+const $ = id => document.getElementById(id);
+const statusEl = $('status'), barEl = $('progressBar');
+let lastStage = 'idle';
+function progress(f, label){
+  barEl.style.width = (f*100).toFixed(1)+'%';
+  if(label){ statusEl.textContent = label + '…'; lastStage = label; }
+}
+
+// ---- error reporting: anything that goes off the rails lands in the red box ----
+const errEntries = [];
+function reportError(context, err){
+  try{
+    const box = $('errbox');
+    const msg = (err && err.message) || String(err);
+    const stack = err && err.stack ? '\n' + err.stack.split('\n').slice(0, 5).join('\n') : '';
+    const entry = `[${new Date().toLocaleTimeString()}] ${context} (stage: ${lastStage})\n${msg}${stack}`;
+    errEntries.push(entry);
+    if(!box.querySelector('.errclear')){
+      const clear = document.createElement('span');
+      clear.className = 'errclear'; clear.textContent = 'clear';
+      clear.onclick = ()=>{ box.style.display='none'; box.textContent=''; errEntries.length = 0; };
+      const copy = document.createElement('span');
+      copy.className = 'errclear'; copy.style.marginRight = '12px'; copy.textContent = 'copy';
+      copy.onclick = ()=>{
+        const text = errEntries.join('\n\n');
+        const done = ()=>{ copy.textContent = 'copied!'; setTimeout(()=>{ copy.textContent = 'copy'; }, 1200); };
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(text).then(done, ()=>{ fallback(); done(); });
+        } else { fallback(); done(); }
+        function fallback(){
+          const ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta);
+          ta.select(); document.execCommand('copy'); ta.remove();
+        }
+      };
+      box.appendChild(clear);
+      box.appendChild(copy);
+    }
+    box.appendChild(document.createTextNode((errEntries.length > 1 ? '\n\n' : '') + entry));
+    box.style.display = 'block';
+    box.scrollTop = box.scrollHeight;
+    statusEl.textContent = 'Error: ' + msg;
+  }catch(e){ /* never let the reporter itself throw */ }
+  console.error(context, err);
+}
+window.addEventListener('error', e => reportError('uncaught', e.error || e.message));
+window.addEventListener('unhandledrejection', e => reportError('unhandled promise', e.reason));
+
+// quality select contents depend on the engine
+function readParams(){
+  return {
+    shape: $('shape').value,
+    size: +$('size').value,
+    scalePct: +$('scalePct').value,
+    cell: +$('cell').value,
+    strut: +$('strut').value,
+    shell: +$('shell').value,
+    bulge: +$('bulge').value,
+    blend: +$('blend').value,
+    variance: +$('variance').value,
+    inset: $('inset').checked,
+    seed: (+$('seed').value)|0,
+    vox: +$('quality').value,
+    smooth: (+$('smooth').value)|0,
+    clean: $('clean').checked,
+    plate: $('plate').value,
+    overhang: +$('overhang').value,
+  };
+}
+
+const SHAPE_FILE_NAMES = {sphere:'sphere', cube:'cube', can:'soda-can', benchy:'benchy'};
+
+function settingsObject(P = readParams()){
+  const o = {
+    app: 'voronoi-studio',
+    shape: P.shape, size: P.size, scalePct: P.scalePct,
+    cell: P.cell, strut: P.strut, shell: P.shell, bulge: P.bulge,
+    blend: P.blend, variance: P.variance, inset: P.inset,
+    seed: P.seed, voxel: P.vox, smooth: P.smooth, clean: P.clean,
+  };
+  if(P.plate && P.plate!=='none'){ o.plate = P.plate; o.overhang = P.overhang; }
+  if(solidSels.length)
+    o.solid = solidSels.map(s => s.type==='plane'
+      ? {t:'p', n:s.n.map(v=>+v.toFixed(4)), d:+s.d.toFixed(2), hit:s.hit.map(v=>+v.toFixed(1)), b:s.boundR}
+      : s.type==='ball'
+      ? {t:'b', c0:s.c0.map(v=>+v.toFixed(2)), R:s.R, hit:s.hit.map(v=>+v.toFixed(1)), b:s.boundR}
+      : s.type==='cyl'
+      ? {t:'c', R:s.R, hit:s.hit.map(v=>+v.toFixed(1)), b:s.boundR}
+      : {t:'s', c0:s.c0, R:s.R, hit:s.hit.map(v=>+v.toFixed(1)), b:s.boundR});
+  if(P.shape==='mesh' && importedMesh) o.mesh = importedMesh.name;
+  return o;
+}
+
+function settingsHash(o){
+  const str = Object.keys(o).filter(k=>k!=='app' && k!=='hash' && o[k]!==undefined).sort()
+    .map(k=>k+'='+o[k]).join('|');
+  let h = 0x811c9dc5;
+  for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return ((h>>>0) % 1679616).toString(36).toUpperCase().padStart(4,'0');
+}
+
+function downloadBlob(blob, filename){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+}
+
+function saveSettings(){
+  const o = settingsObject();
+  const hash = settingsHash(o);
+  o.hash = hash;
+  const name = `voronoi-${o.shape==='mesh'&&o.mesh ? o.mesh : SHAPE_FILE_NAMES[o.shape]||o.shape}-${hash}.json`;
+  downloadBlob(new Blob([JSON.stringify(o, null, 2)], {type:'application/json'}), name);
+  statusEl.textContent = `Settings saved as ${name}`;
+}
+
+function applySettings(o){
+  if(!o || !(String(o.app||'').startsWith('voronoi-studio') || String(o.app||'').startsWith('organic-shell-studio')))
+    throw new Error('not a Voronoi Studio settings file');
+  if(o.shape==='mesh' && !importedMesh){
+    statusEl.textContent = `Settings want imported STL "${o.mesh||'?'}" — import it first, other settings applied.`;
+  } else if(o.shape){
+    const opt = [...$('shape').options].find(x=>x.value===o.shape);
+    if(opt && !opt.disabled) $('shape').value = o.shape;
+  }
+  if(o.shape==='mesh' && importedMesh && o.mesh && o.mesh!==importedMesh.name)
+    statusEl.textContent = `Note: settings were saved with mesh "${o.mesh}", current import is "${importedMesh.name}".`;
+  const sliders = {size:'size', scalePct:'scalePct', cell:'cell', strut:'strut', shell:'shell',
+                   bulge:'bulge', blend:'blend', variance:'variance', seed:'seed', smooth:'smooth'};
+  for(const [key,id] of Object.entries(sliders))
+    if(o[key]!==undefined) $(id).value = o[key];
+  if(o.inset!==undefined) $('inset').checked = !!o.inset;
+  if(o.clean!==undefined) $('clean').checked = !!o.clean;
+  $('plate').value = o.plate || 'none';
+  if(o.overhang!==undefined) $('overhang').value = o.overhang;
+  solidSels = (o.solid || []).map(s => s.t==='p'
+    ? {type:'plane', n:s.n, d:s.d, hit:s.hit, boundR:s.b}
+    : s.t==='c'
+    ? {type:'cyl', R:s.R, hit:s.hit, boundR:s.b}
+    : {type: s.t==='b' ? 'ball' : 'sphere', c0:s.c0, R:s.R, hit:s.hit, boundR:s.b});
+  refreshSelOverlay();
+  if(o.voxel!==undefined && [...$('quality').options].some(x=>x.value===String(o.voxel)))
+    $('quality').value = String(o.voxel);
+  if(o.smooth!==undefined) $('smooth').value = o.smooth;
+  updateLabels();
+  generate();
+}
+
+function updateLabels(){
+  $('v_size').textContent = $('size').value + ' mm';
+  $('v_scalePct').textContent = $('scalePct').value + ' %';
+  $('v_cell').textContent = $('cell').value + ' mm';
+  $('v_strut').textContent = $('strut').value + ' mm';
+  $('v_shell').textContent = $('shell').value + ' mm';
+  $('v_bulge').textContent = $('bulge').value + ' mm';
+  $('v_blend').textContent = $('blend').value + ' mm';
+  $('v_variance').textContent = (+$('variance').value).toFixed(2);
+  const sm = +$('smooth').value;
+  $('v_smooth').textContent = sm ? sm + ' passes' : 'off';
+  $('v_brushR').textContent = $('brushR').value + ' mm';
+  $('brushRow').style.display = $('selTool').value==='brush' ? '' : 'none';
+  $('v_overhang').textContent = $('overhang').value + '°';
+  $('overhangRow').style.display = $('plate').value==='none' ? 'none' : '';
+  const shape = $('shape').value;
+  for(const row of document.querySelectorAll('#sizeRows label.row')){
+    row.style.display = row.dataset.for.split(' ').includes(shape) ? '' : 'none';
+  }
+}
+
+/* ============================== generate ============================== */
+
+let current = null;
+let running = false, queued = false;
+
+// ---- V1 voxel pipeline (field -> blur -> marching tets) ----
+async function runVoxelPipeline(P, shape, rng, tStart){
+  const bb = shape.bbox;
+  const pad = P.shell/2 + P.bulge + P.blend + 4*P.vox + 0.5;
+  let vox = P.vox;
+  const span = [bb.max[0]-bb.min[0]+2*pad, bb.max[1]-bb.min[1]+2*pad, bb.max[2]-bb.min[2]+2*pad];
+  let nodes = (span[0]/vox+1)*(span[1]/vox+1)*(span[2]/vox+1);
+  const NODE_CAP = 3.4e7;
+  if(nodes > NODE_CAP){
+    vox *= Math.cbrt(nodes/NODE_CAP);
+    statusEl.textContent = `voxel size raised to ${vox.toFixed(2)} mm (grid cap)`;
+  }
+  const g = {
+    minx: bb.min[0]-pad, miny: bb.min[1]-pad, minz: bb.min[2]-pad,
+    maxx: bb.max[0]+pad, maxy: bb.max[1]+pad, maxz: bb.max[2]+pad,
+    vox,
+  };
+  g.nx = Math.ceil((g.maxx-g.minx)/vox);
+  g.ny = Math.ceil((g.maxy-g.miny)/vox);
+  g.nz = Math.ceil((g.maxz-g.minz)/vox);
+
+  progress(0.02, 'scattering seeds');
+  await tick();
+  const seeds = buildSeedsV1(shape, P, rng);
+  if(seeds.n < 4) throw new Error('too few seeds — decrease cell size or enlarge the shape');
+
+  let meshD = null;
+  if(shape.kind === 'mesh'){
+    const band = P.shell/2 + P.bulge + P.blend + 4*vox + 1;
+    meshD = await buildMeshSDFGrid(shape.tris, g, band, progress);
+  }
+
+  const F = await buildField(shape, meshD, seeds, g, P, progress);
+  await blurField(F, g, progress);
+  let {positions, indices} = await polygonizeMT(F, g, progress);
+  progress(0.97, 'verifying mesh');
+  await tick();
+
+  const comp = analyzeComponents(positions, indices);
+  const inputPieces = (P.shape==='mesh' && importedMesh) ? (importedMesh.pieces || 1) : 1;
+  let debrisRemoved = 0, debrisVol = 0;
+  if(P.clean && comp.list.length > Math.max(inputPieces,1)){
+    const volMax = comp.list.length ? comp.list[0].volume : 0;
+    const keep = new Set();
+    comp.list.forEach((c,idx)=>{
+      if(idx < inputPieces || c.volume >= 0.05*volMax) keep.add(c.root);
+      else { debrisRemoved++; debrisVol += c.volume; }
+    });
+    if(debrisRemoved) indices = filterComponents(indices, comp.find, keep);
+  }
+  const pieces = comp.list.length - debrisRemoved;
+
+  if(P.smooth > 0 && indices.length){
+    await taubinSmooth(positions, indices, P.smooth, progress);
+  }
+  if(P.inset && indices.length){
+    clampInsideSDF(positions, shape.kind==='mesh' ? makeGridSampler(meshD, g) : shape.sdf);
+  }
+  const checks = meshChecks(positions, indices);
+  if(checks.boundary > 0 || checks.nonManifold > 0 || pieces > inputPieces){
+    reportError('verifier', new Error(
+      `quality check failed: ${checks.boundary} boundary / ${checks.nonManifold} non-manifold edges, ` +
+      `${pieces} piece(s) vs ${inputPieces} input piece(s). ` +
+      `Try smaller cells, thicker struts, lower variance, or higher quality.`));
+  }
+
+  setShellGeometry(positions, indices);
+  frameObject(bb);
+
+  const hash = settingsHash(settingsObject(P));
+  const secs = (performance.now()-tStart)/1000;
+  current = { positions, indices, checks, shapeName: shape.name, seeds: seeds.n, secs, P,
+              pieces, inputPieces, debrisRemoved, debrisVol, hash,
+              cells: seeds.n, holes: undefined, solidCaps: undefined, baseVerts: undefined };
+  $('export').disabled = indices.length === 0;
+
+  const wt = checks.boundary===0 && checks.nonManifold===0;
+  const piecesOk = pieces <= inputPieces;
+  let piecesHtml = `Solid pieces: ${piecesOk ? `<span class="ok">${pieces} ✓</span>` : `<span class="bad">${pieces} — disconnected! (input has ${inputPieces})</span>`}`;
+  if(debrisRemoved) piecesHtml += ` &nbsp;·&nbsp; removed ${debrisRemoved} floating debris (${(debrisVol/1000).toFixed(2)} mL)`;
+  $('stats').innerHTML =
+    `<b>${(indices.length/3).toLocaleString()}</b> triangles, <b>${(positions.length/3).toLocaleString()}</b> vertices<br>` +
+    `Voronoi seeds: <b>${seeds.n}</b> &nbsp;·&nbsp; grid ${g.nx}×${g.ny}×${g.nz} @ ${vox.toFixed(2)} mm<br>` +
+    `Watertight: ${wt ? '<span class="ok">yes ✓</span>' : `<span class="bad">no (${checks.boundary} boundary / ${checks.nonManifold} non-manifold edges)</span>`}<br>` +
+    piecesHtml + `<br>` +
+    `Material volume: <b>${(checks.volume/1000).toFixed(1)} mL</b> &nbsp;·&nbsp; ${secs.toFixed(1)} s<br>` +
+    `Settings hash: <b>#${hash}</b>`;
+  progress(1, '');
+  statusEl.textContent = piecesOk ? 'Done.' :
+    'Done, but the shell is disconnected — enlarge struts, shrink cell size, or reduce variance.';
+}
+
+async function generate(){
+  if(running){ queued = true; return; }
+  running = true;
+  $('generate').disabled = true;
+  const tStart = performance.now();
+  try{
+    const P = readParams();
+    const rng = mulberry32(P.seed ^ 0x9e3779b9);
+    // overhang bias: shrink z in the seed metric → vertically stretched cells,
+    // steeper struts. Symmetric, so 'below' and 'above' plates behave the same.
+    ANISO = P.plate && P.plate!=='none' ? clamp(1 - P.overhang/75, 0.25, 1) : 1;
+    if(P.shape === 'benchy') await ensureBenchy();
+    const shape = makeShape(P);
+    setGhost(shape);
+
+    // painted selections are anchored to a specific input surface — after a
+    // shape/scale/cut change (or a settings file saved from another shape),
+    // stale ones sit inside the body and mask random bands of cells solid
+    // (giant melted drapes). Drop any whose hit point left the surface.
+    if(solidSels.length && shape.kind === 'analytic' && shape.sdf){
+      const kept = solidSels.filter(s => Math.abs(shape.sdf(s.hit[0], s.hit[1], s.hit[2])) <= 1.0);
+      if(kept.length !== solidSels.length){
+        const n = solidSels.length - kept.length;
+        solidSels = kept;
+        refreshSelOverlay();
+        reportError('paint', new Error(
+          `removed ${n} painted selection(s) that no longer lie on the input surface ` +
+          `(left over from a different shape/scale/cut) — re-paint if needed.`));
+      }
+    }
+
+    await runVoxelPipeline(P, shape, rng, tStart);
+  } catch(err){
+    reportError('generate', err);
+  } finally {
+    running = false;
+    $('generate').disabled = false;
+    if(queued){ queued = false; generate(); }
+  }
+}
+
+function exportSTL(){
+  if(!current) return;
+  const buf = buildBinarySTL(current.positions, current.indices);
+  downloadBlob(new Blob([buf], {type:'model/stl'}), `voronoi-${current.shapeName}-${current.hash}.stl`);
+}
+
+// pick sensible pattern parameters for a freshly imported model, scaled to its size
+function autoScaleParams(maxDim){
+  const cell = clamp(Math.round(maxDim/5*2)/2, 5, 30);
+  const strut = clamp(Math.round(cell/5*10)/10, 1, 6);
+  $('cell').value = cell;
+  $('strut').value = strut;
+  $('bulge').value = clamp(Math.round(strut*5)/10, 0, 3);
+  $('blend').value = clamp(Math.round(strut*4.5)/10, 0, 3);
+  $('scalePct').value = 100;
+  updateLabels();
+}
+
+function loadSTLBuffer(buffer, name){
+  const tris = parseSTL(buffer);
+  const {mn, mx} = centerTris(tris);
+  autoScaleParams(Math.max(mx[0]-mn[0], mx[1]-mn[1], mx[2]-mn[2]));
+  importedMesh = { tris, name: (name||'import').replace(/\.stl$/i,''), pieces: countMeshPieces(tris) };
+  $('meshOpt').disabled = false;
+  $('meshOpt').textContent = `Imported: ${importedMesh.name} (${(tris.length/9).toLocaleString()} tris, ${(mx[0]-mn[0]).toFixed(0)}×${(mx[1]-mn[1]).toFixed(0)}×${(mx[2]-mn[2]).toFixed(0)} mm${importedMesh.pieces>1 ? ', '+importedMesh.pieces+' pieces' : ''})`;
+  $('shape').value = 'mesh';
+  updateLabels();
+  refreshInputPreview();
+  generate();
+}
+
+/* --- events --- */
+let debounceT = null;
+function paramChanged(){
+  updateLabels();
+  refreshInputPreview();
+  if($('auto').checked){
+    clearTimeout(debounceT);
+    debounceT = setTimeout(generate, 400);
+  }
+}
+for(const id of ['size','scalePct','cell','strut','shell','bulge','blend','variance','quality','inset','smooth','clean',
+                 'plate','overhang'])
+  $(id).addEventListener('input', paramChanged);
+$('clearPaint').addEventListener('click', ()=>{
+  solidSels = [];
+  refreshSelOverlay();
+  paramChanged();
+});
+// tool choice / brush size only affect future strokes — update labels, no regen
+$('selTool').addEventListener('input', ()=>{ updateLabels(); if(brushGhost) brushGhost.visible = false; });
+$('brushR').addEventListener('input', ()=>{ updateLabels(); if(brushGhost && brushGhost.visible) brushGhost.scale.setScalar((+$('brushR').value)/2); });
+$('seed').addEventListener('change', paramChanged);
+let benchyTuned = false;
+$('shape').addEventListener('change', ()=>{
+  // benchy is small, detailed and thin-walled — finer pattern, straddle mode
+  if($('shape').value==='benchy' && !benchyTuned){
+    benchyTuned = true; autoScaleParams(35);
+    $('shell').value = 1.6;
+    $('inset').checked = false; // benchy's walls are thinner than the inset offset
+    updateLabels();
+  }
+  updateLabels(); refreshInputPreview(); generate();
+});
+$('ghost').addEventListener('change', ()=>{ try{ setGhost(makeShape(readParams())); }catch(e){} });
+$('generate').addEventListener('click', generate);
+$('export').addEventListener('click', exportSTL);
+$('saveSettings').addEventListener('click', saveSettings);
+$('loadSettings').addEventListener('click', ()=> $('settingsInput').click());
+$('settingsInput').addEventListener('change', async e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  try{ applySettings(JSON.parse(await f.text())); }
+  catch(err){ statusEl.textContent = 'Settings load failed: ' + err.message; }
+  e.target.value = '';
+});
+$('dice').addEventListener('click', ()=>{
+  $('seed').value = Math.floor(Math.random()*100000);
+  paramChanged(); if(!$('auto').checked) generate();
+});
+$('importBtn').addEventListener('click', ()=> $('fileInput').click());
+$('fileInput').addEventListener('change', async e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  try{ loadSTLBuffer(await f.arrayBuffer(), f.name); }
+  catch(err){ statusEl.textContent = 'Import failed: ' + err.message; }
+  e.target.value = '';
+});
+viewport.addEventListener('dragover', e=>{ e.preventDefault(); $('dropHint').style.display='flex'; });
+viewport.addEventListener('dragleave', ()=> $('dropHint').style.display='none');
+viewport.addEventListener('drop', async e=>{
+  e.preventDefault(); $('dropHint').style.display='none';
+  const f = e.dataTransfer.files[0];
+  if(!f) return;
+  try{ loadSTLBuffer(await f.arrayBuffer(), f.name); }
+  catch(err){ statusEl.textContent = 'Import failed: ' + err.message; }
+});
+
+// test / automation hooks
+window.__app = {
+  generate,
+  isRunning: ()=> running,
+  stats: ()=> current ? {
+    tris: current.indices.length/3,
+    verts: current.positions.length/3,
+    seeds: current.seeds,
+    boundaryEdges: current.checks.boundary,
+    nonManifoldEdges: current.checks.nonManifold,
+    volumeML: current.checks.volume/1000,
+    shape: current.shapeName,
+    secs: current.secs,
+    pieces: current.pieces,
+    inputPieces: current.inputPieces,
+    debrisRemoved: current.debrisRemoved,
+    debrisVolML: current.debrisVol/1000,
+    hash: current.hash,
+    cells: current.cells,
+    holes: current.holes,
+    solidCaps: current.solidCaps,
+    baseVerts: current.baseVerts,
+  } : null,
+  stlBuffer: ()=> current ? buildBinarySTL(current.positions, current.indices) : null,
+  setParam: (id,v)=>{
+    const el = $(id);
+    if(el.type==='checkbox') el.checked = !!v; else el.value = v;
+    updateLabels();
+  },
+  importSTLFromURL: async url=>{
+    const r = await fetch(url);
+    loadSTLBuffer(await r.arrayBuffer(), url.split('/').pop());
+  },
+  showInputPreview,
+  settingsObject, settingsHash, applySettings,
+  mesh: ()=> current ? {positions: current.positions, indices: current.indices} : null,
+  errors: ()=> errEntries.join('\n\n'),
+  addSolidSel: s=>{ solidSels.push(s); refreshSelOverlay(); },
+  previewMesh: ()=> inputPreviewMesh,
+  clearSolid: ()=>{ solidSels = []; refreshSelOverlay(); },
+  solidSels: ()=> solidSels,
+  toggleSurfaceAt,
+  bounds: ()=>{
+    if(!current) return null;
+    const p = current.positions;
+    let mn=[Infinity,Infinity,Infinity], mx=[-Infinity,-Infinity,-Infinity], maxR=0, maxNorm=0;
+    for(let i=0;i<p.length;i+=3){
+      for(let k=0;k<3;k++){ if(p[i+k]<mn[k]) mn[k]=p[i+k]; if(p[i+k]>mx[k]) mx[k]=p[i+k]; }
+      const r = Math.hypot(p[i],p[i+1]);
+      if(r>maxR) maxR=r;
+      const n = Math.hypot(p[i],p[i+1],p[i+2]);
+      if(n>maxNorm) maxNorm=n;
+    }
+    return {min:mn, max:mx, maxRadiusXY:maxR, maxNorm};
+  },
+};
+
+updateLabels();
+generate();
+</script>
+</body>
+</html>
