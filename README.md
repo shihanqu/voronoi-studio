@@ -5,11 +5,16 @@ Pick a shape (or drop in any watertight STL), and it wraps the surface in an
 organic Voronoi web — bulging struts, rounded holes, a printable shell — then
 exports a watertight binary STL.
 
+### ▶ [Live demo — try it in your browser](https://shihanqu.github.io/voronoi-studio/)
+
+![Voronoi Studio demo](demo.gif)
+
 ![Voronoi Studio](https://img.shields.io/badge/single%20file-HTML%2FJS-blue)
 
 ## Run it
 
-Open `voronoi-studio.html` in any modern browser. That's it — no build step,
+Use the [live demo](https://shihanqu.github.io/voronoi-studio/), or open
+`voronoi-studio.html` in any modern browser. That's it — no build step,
 no server. (three.js is loaded from a CDN, so the first load needs internet.)
 
 ## Features
