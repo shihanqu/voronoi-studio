@@ -9,7 +9,6 @@ exports a watertight binary STL.
 
 ![Voronoi Studio demo](demo.gif)
 
-[![GitHub stars](https://img.shields.io/github/stars/shihanqu/voronoi-studio?style=for-the-badge&logo=github&logoColor=white&label=%E2%98%85&labelColor=21262d&color=21262d)](https://github.com/shihanqu/voronoi-studio)
 ![Single file](https://img.shields.io/badge/single%20file-HTML%2FJS-blue)
 
 ## Run it
